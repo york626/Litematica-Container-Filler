@@ -23,6 +23,9 @@
 |---|---|
 | 构建工具链对齐本机缓存 | 见上（commit `938b4dd`） |
 | **快捷精妙背包提取**（`enableSbpExtraction`，默认开） | 缺料时从精妙背包取货并自动重提交任务，用户只按一次填充键。实现：`compat/sbp/*`；接线在 `AutoFillerStateMachine` 的 `addTask` / `addManualTask` / `markMissingMaterials`（commit `562848f`） |
+| **材料列表计入背包内潜影盒**（`enableSbpShulkerCount`，默认开） | `mixin/SbpMaterialListUtilsMixin`（反射读精妙存储，展开背包内潜影盒/收纳袋内容） |
+| 标题栏显示版本号 | `Reference.MOD_VERSION` + `GuiConfigs` 标题拼接 |
+| 0.10.5-Ray 修启动崩溃 | ⚠️ **mixins.json 里的条目必须相对 `package`**：写成 `compat.sbp.mixin.X` 会被再拼一次包前缀 ⇒ ClassNotFound ⇒ PREPARE 失败（连带把 carpet-ams 的 preLaunch 拖崩）。类放 `…litematicafiller.mixin` 包、json 只写类名 |
 
 ## 快捷精妙背包提取（设计要点）
 
