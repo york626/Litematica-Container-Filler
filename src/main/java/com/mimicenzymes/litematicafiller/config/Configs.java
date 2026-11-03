@@ -60,6 +60,8 @@ public class Configs implements IConfigHandler {
     //自动物流设置
     public static final ConfigBoolean ENABLE_CREATIVE_FILL          = new ConfigBoolean("litematica_container_filler.config.name.creativeFill", true, "litematica_container_filler.config.comment.creativeFill");
     public static final ConfigBoolean ENABLE_QS_EXTRACTION          = new ConfigBoolean("litematica_container_filler.config.name.enableQsExtraction", true, "litematica_container_filler.config.comment.enableQsExtraction");
+    /** 【快捷精妙背包提取】缺料时从精妙背包（Sophisticated Backpacks）取货并自动继续填充。 */
+    public static final ConfigBoolean ENABLE_SBP_EXTRACTION         = new ConfigBoolean("litematica_container_filler.config.name.enableSbpExtraction", true, "litematica_container_filler.config.comment.enableSbpExtraction");
     public static final ConfigOptionList QUICK_SHULKER_OPEN_MODE    = new ConfigOptionList("litematica_container_filler.config.name.quickShulkerOpenMode", QuickShulkerOpenMode.INVOKE, "litematica_container_filler.config.comment.quickShulkerOpenMode");
     public static final ConfigBoolean MATCH_SHULKER_BOXES_BY_CONTENT = new ConfigBoolean("litematica_container_filler.config.name.matchShulkerBoxesByContent", false, "litematica_container_filler.config.comment.matchShulkerBoxesByContent");
     // Keep this legacy field public for TakeItOut's optional compatibility mixin.
@@ -174,6 +176,7 @@ public class Configs implements IConfigHandler {
         LOGISTICS_OPTIONS = ImmutableList.of(
                 ENABLE_CREATIVE_FILL,
                 ENABLE_QS_EXTRACTION,
+                ENABLE_SBP_EXTRACTION,
                 QUICK_SHULKER_OPEN_MODE,
                 MATCH_SHULKER_BOXES_BY_CONTENT,
                 STORE_ORDERLY,

@@ -356,20 +356,20 @@
   "litematica_container_filler.hotkey.comment.toolSwitchMode": "循环切换当前容器工具，并启用工具 HUD。",
   "litematica_container_filler.hotkey.comment.toolSwitchPrevious": "反向循环切换当前容器工具。",
   "litematica_container_filler.hotkey.comment.toolCloseAll": "关闭填充工作和所有容器工具模式。",
-  "litematica_container_filler.message.tool_disabled": "\u00a7e[容器填充] 容器工具已禁用。",
-  "litematica_container_filler.message.tool_mode_switched": "\u00a7b[容器填充] 工具模式：%s",
-  "litematica_container_filler.message.tool_all_closed": "\u00a7e[容器填充] 填充工作和容器工具已关闭。",
-  "litematica_container_filler.message.tool_pack_started": "\u00a7b[容器填充] 正在把准星容器内容收纳进潜影盒。",
-  "litematica_container_filler.message.tool_collect_materials_started": "\u00a7b[容器填充] 正在从准星容器收集材料列表缺失物品。",
-  "litematica_container_filler.message.tool_pack_no_inventory_space": "\u00a7c[容器填充] 容器收纳需要背包有空格作为转移缓冲。",
-  "litematica_container_filler.message.tool_pack_no_shulker": "\u00a7e[容器填充] 背包中没有找到容量足够的潜影盒。",
-  "litematica_container_filler.message.tool_pack_no_shulker_support": "\u00a7c[容器填充] 容器收纳已禁用：没有 QuickShulker 或兼容的模拟点击支持。",
-  "litematica_container_filler.message.tool_pack_no_matching_stack": "\u00a7e[容器填充] 无法把已转移的物品放入打开的潜影盒。",
-  "litematica_container_filler.message.tool_clear_inventory_full": "\u00a7e[容器填充] 背包空间不足，无法把清空的物品放入背包。",
-  "litematica_container_filler.message.tool_sync_already_matched": "\u00a7a[容器填充] 目标容器已与同步模板一致。",
-  "litematica_container_filler.message.tool_collect_no_material_list": "\u00a7e[容器填充] 没有可用且存在缺失物品的 Litematica 材料列表。",
-  "litematica_container_filler.message.tool_collect_materials_done": "\u00a7a[容器填充] 已收集 %s 个材料列表缺失物品。",
-  "litematica_container_filler.message.tool_collect_materials_none": "\u00a7e[容器填充] 此容器中没有匹配的材料列表缺失物品。",
+  "litematica_container_filler.message.tool_disabled": "§e[容器填充] 容器工具已禁用。",
+  "litematica_container_filler.message.tool_mode_switched": "§b[容器填充] 工具模式：%s",
+  "litematica_container_filler.message.tool_all_closed": "§e[容器填充] 填充工作和容器工具已关闭。",
+  "litematica_container_filler.message.tool_pack_started": "§b[容器填充] 正在把准星容器内容收纳进潜影盒。",
+  "litematica_container_filler.message.tool_collect_materials_started": "§b[容器填充] 正在从准星容器收集材料列表缺失物品。",
+  "litematica_container_filler.message.tool_pack_no_inventory_space": "§c[容器填充] 容器收纳需要背包有空格作为转移缓冲。",
+  "litematica_container_filler.message.tool_pack_no_shulker": "§e[容器填充] 背包中没有找到容量足够的潜影盒。",
+  "litematica_container_filler.message.tool_pack_no_shulker_support": "§c[容器填充] 容器收纳已禁用：没有 QuickShulker 或兼容的模拟点击支持。",
+  "litematica_container_filler.message.tool_pack_no_matching_stack": "§e[容器填充] 无法把已转移的物品放入打开的潜影盒。",
+  "litematica_container_filler.message.tool_clear_inventory_full": "§e[容器填充] 背包空间不足，无法把清空的物品放入背包。",
+  "litematica_container_filler.message.tool_sync_already_matched": "§a[容器填充] 目标容器已与同步模板一致。",
+  "litematica_container_filler.message.tool_collect_no_material_list": "§e[容器填充] 没有可用且存在缺失物品的 Litematica 材料列表。",
+  "litematica_container_filler.message.tool_collect_materials_done": "§a[容器填充] 已收集 %s 个材料列表缺失物品。",
+  "litematica_container_filler.message.tool_collect_materials_none": "§e[容器填充] 此容器中没有匹配的材料列表缺失物品。",
   "litematica_container_filler.hud.tool": "%s",
   "litematica_container_filler.hud.tool_hint": "看向容器后执行",
   "litematica_container_filler.hud.tool_action": "按“%s”执行",
@@ -388,13 +388,15 @@
   "litematica_container_filler.config.option.toolHudStyle.anchoredCard": "锚点指示卡片",
   "litematica_container_filler.config.name.taskMarkerAnimationFps": "任务标记帧率上限",
   "litematica_container_filler.config.comment.taskMarkerAnimationFps": "正在填充、排队等待、缺少材料标记的最大动画重建帧率。0 表示不限制。",
-  "litematica_container_filler.hud.fixed.title": "工具信息："
-  , "litematica_container_filler.hotkey.name.cycleManualOverride": "切换容器手动标记"
-  , "litematica_container_filler.hotkey.name.clearManualOverrides": "清除容器手动标记"
-  , "litematica_container_filler.hotkey.comment.cycleManualOverride": "将准星指向的投影容器在自动、手动已完成、手动需要填充之间循环切换。"
-  , "litematica_container_filler.hotkey.comment.clearManualOverrides": "清除本次会话中的所有容器手动标记。"
-  , "litematica_container_filler.message.manual_override_auto": "§b[容器填充] 已清除手动标记：恢复自动判断。"
-  , "litematica_container_filler.message.manual_override_completed": "§a[容器填充] 已标记为完成：填充会跳过该容器。"
-  , "litematica_container_filler.message.manual_override_needs_fill": "§e[容器填充] 已标记为需要填充：该容器会保持高亮并参与填充。"
-  , "litematica_container_filler.message.manual_override_cleared": "§b[容器填充] 已清除 %s 个容器手动标记。"
+  "litematica_container_filler.hud.fixed.title": "工具信息：",
+  "litematica_container_filler.hotkey.name.cycleManualOverride": "切换容器手动标记",
+  "litematica_container_filler.hotkey.name.clearManualOverrides": "清除容器手动标记",
+  "litematica_container_filler.hotkey.comment.cycleManualOverride": "将准星指向的投影容器在自动、手动已完成、手动需要填充之间循环切换。",
+  "litematica_container_filler.hotkey.comment.clearManualOverrides": "清除本次会话中的所有容器手动标记。",
+  "litematica_container_filler.message.manual_override_auto": "§b[容器填充] 已清除手动标记：恢复自动判断。",
+  "litematica_container_filler.message.manual_override_completed": "§a[容器填充] 已标记为完成：填充会跳过该容器。",
+  "litematica_container_filler.message.manual_override_needs_fill": "§e[容器填充] 已标记为需要填充：该容器会保持高亮并参与填充。",
+  "litematica_container_filler.message.manual_override_cleared": "§b[容器填充] 已清除 %s 个容器手动标记。",
+  "litematica_container_filler.config.name.enableSbpExtraction": "快捷精妙背包提取",
+  "litematica_container_filler.config.comment.enableSbpExtraction": "缺料时从精妙背包（Sophisticated Backpacks）取出所需材料，并自动继续填充（只需按一次填充键）。需要安装精妙背包。"
 }

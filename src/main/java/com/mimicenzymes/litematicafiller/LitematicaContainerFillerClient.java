@@ -35,6 +35,7 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
     public void onInitializeClient() {
         ServuxSyncHandler.registerPayloads();
         TakeItOutCompat.registerPayload();
+        com.mimicenzymes.litematicafiller.compat.sbp.SbpPayloads.register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!isGuiAutoRegistered) {

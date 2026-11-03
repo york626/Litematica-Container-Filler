@@ -302,6 +302,7 @@ public class AutoFillerStateMachine {
 
     public boolean addTask(BlockPos pos, Map<Integer, ItemStack> requiredItems, boolean preferNearby) {
         if (requiredItems == null) return false;
+        com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.rememberTask(pos, requiredItems, false);
         pos = pos.toImmutable();
         if (ManualContainerOverrideManager.isCompleted(pos)) return false;
         if (isCreativeFillEnabled()) {
@@ -387,6 +388,7 @@ public class AutoFillerStateMachine {
 
     public void addManualTask(BlockPos pos, Map<Integer, ItemStack> requiredItems) {
         if (requiredItems == null) return;
+        com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.rememberTask(pos, requiredItems, true);
         failedContainers.remove(pos);
         RealContainerCache.remove(pos);
 
@@ -455,8 +457,14 @@ public class AutoFillerStateMachine {
         return false;
     }
 
+    /** 【快捷精妙背包提取】重提交前清掉"这个容器失败过"的标记。 */
+    public void clearFailedContainer(BlockPos pos) {
+        failedContainers.remove(pos);
+    }
+
     private void markMissingMaterials(BlockPos pos, Set<Item> missingTypes) {
         if (pos == null || missingTypes == null || missingTypes.isEmpty()) return;
+        com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.onMissing(pos, missingTypes);
         missingMaterialMarkers.put(pos.toImmutable(), System.currentTimeMillis() + MISSING_MATERIAL_MARKER_MS);
     }
 

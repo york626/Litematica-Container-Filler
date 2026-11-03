@@ -59,8 +59,8 @@
   "litematica_container_filler.message.material_replacement_added": "Added item replacement: %s -> %s",
   "litematica_container_filler.message.material_replacement_reset": "Cleared replacement rule for: %s",
   "litematica_container_filler.message.material_replacement_schematic_cleared": "Cleared replacement rules for this schematic.",
-  "litematica_container_filler.message.material_locate_found": "\u00a7b[Container Filler] Highlighted %s schematic containers that require this item.",
-  "litematica_container_filler.message.material_locate_none": "\u00a7e[Container Filler] No schematic containers require this item.",
+  "litematica_container_filler.message.material_locate_found": "§b[Container Filler] Highlighted %s schematic containers that require this item.",
+  "litematica_container_filler.message.material_locate_none": "§e[Container Filler] No schematic containers require this item.",
   "litematica_container_filler.gui.title.container_filter_picker": "Container Filter Picker",
   "litematica_container_filler.gui.title.render_editor": "Render Editor",
   "litematica_container_filler.gui.label.container_filter_picker": "Click container cards to add or remove their block IDs from the whitelist/blacklist list. Press ESC to return to configs.",
@@ -391,8 +391,10 @@
   "litematica_container_filler.hotkey.name.clearManualOverrides": "Clear Manual Container Marks",
   "litematica_container_filler.hotkey.comment.cycleManualOverride": "Cycles the looked-at schematic container between Auto, Manually Completed, and Manually Needs Fill.",
   "litematica_container_filler.hotkey.comment.clearManualOverrides": "Clears all session-only manual container marks.",
-  "litematica_container_filler.message.manual_override_auto": "\u00a7b[Container Filler] Manual mark cleared: automatic state.",
-  "litematica_container_filler.message.manual_override_completed": "\u00a7a[Container Filler] Marked as completed. Fill will skip this container.",
-  "litematica_container_filler.message.manual_override_needs_fill": "\u00a7e[Container Filler] Marked as needing fill. It will stay highlighted and be considered by fill.",
-  "litematica_container_filler.message.manual_override_cleared": "\u00a7b[Container Filler] Cleared %s manual container marks."
+  "litematica_container_filler.message.manual_override_auto": "§b[Container Filler] Manual mark cleared: automatic state.",
+  "litematica_container_filler.message.manual_override_completed": "§a[Container Filler] Marked as completed. Fill will skip this container.",
+  "litematica_container_filler.message.manual_override_needs_fill": "§e[Container Filler] Marked as needing fill. It will stay highlighted and be considered by fill.",
+  "litematica_container_filler.message.manual_override_cleared": "§b[Container Filler] Cleared %s manual container marks.",
+  "litematica_container_filler.config.name.enableSbpExtraction": "Quick SBP extraction",
+  "litematica_container_filler.config.comment.enableSbpExtraction": "When materials are missing, pull them out of a worn Sophisticated Backpack and continue filling automatically."
 }

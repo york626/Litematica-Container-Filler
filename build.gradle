@@ -33,6 +33,12 @@ dependencies {
     modLocalRuntime name: 'modmenu-11.0.5'
     modCompileOnly name: 'quickshulker-3.1.0-1.21.1'
     modLocalRuntime name: 'quickshulker-3.1.0-1.21.1'
+
+    // 【快捷精妙背包提取】精妙背包 / 精妙核心（编译期；运行期由 mods 目录提供）
+    modCompileOnly files('libs/sophisticatedbackpacks.jar')
+    modCompileOnly files('libs/sophisticatedcore.jar')
+    modCompileOnly files('libs/energy.jar')
+    compileOnly files('libs/transfer.jar')
 }
 
 tasks.withType(JavaCompile).configureEach {
