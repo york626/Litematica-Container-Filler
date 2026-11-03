@@ -396,5 +396,7 @@
   "litematica_container_filler.message.manual_override_needs_fill": "§e[Container Filler] Marked as needing fill. It will stay highlighted and be considered by fill.",
   "litematica_container_filler.message.manual_override_cleared": "§b[Container Filler] Cleared %s manual container marks.",
   "litematica_container_filler.config.name.enableSbpExtraction": "Quick SBP extraction",
-  "litematica_container_filler.config.comment.enableSbpExtraction": "When materials are missing, pull them out of a worn Sophisticated Backpack and continue filling automatically."
+  "litematica_container_filler.config.comment.enableSbpExtraction": "When materials are missing, pull them out of a worn Sophisticated Backpack and continue filling automatically.",
+  "litematica_container_filler.config.name.enableSbpShulkerCount": "Count shulkers inside backpacks",
+  "litematica_container_filler.config.comment.enableSbpShulkerCount": "Include contents of shulker boxes (and bundles) stored inside Sophisticated Backpacks in the material list's available count."
 }

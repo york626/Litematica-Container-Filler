@@ -38,8 +38,21 @@ public final class SbpBridge {
     /** 每个容器最近一次的填充请求（用于自动重提交）。 */
     private static final Map<String, PendingTask> pendingTasks = new HashMap<>();
 
-    private record PendingTask(BlockPos pos, Map<Integer, ItemStack> required, boolean manual,
-                               Set<Item> missing, long storedAt) {
+    private static final class PendingTask {
+        final BlockPos pos;
+        final Map<Integer, ItemStack> required;
+        final boolean manual;
+        Set<Item> missing;
+        final long storedAt = System.currentTimeMillis();
+        /** >0 表示"取货成功、等待背包同步后重提交"。 */
+        long armedAt = 0L;
+
+        PendingTask(BlockPos pos, Map<Integer, ItemStack> required, boolean manual, Set<Item> missing) {
+            this.pos = pos;
+            this.required = required;
+            this.manual = manual;
+            this.missing = missing;
+        }
     }
 
     public static boolean enabled() {
@@ -53,9 +66,8 @@ public final class SbpBridge {
         }
         String key = pos.toShortString();
         PendingTask old = pendingTasks.get(key);
-        Set<Item> missing = old != null ? old.missing() : new HashSet<>();
-        pendingTasks.put(key, new PendingTask(pos.toImmutable(), new HashMap<>(required), manual,
-                missing, System.currentTimeMillis()));
+        Set<Item> missing = old != null ? old.missing : new HashSet<>();
+        pendingTasks.put(key, new PendingTask(pos.toImmutable(), new HashMap<>(required), manual, missing));
         while (pendingTasks.size() > 16) {
             String oldest = pendingTasks.keySet().iterator().next();
             pendingTasks.remove(oldest);
@@ -71,8 +83,7 @@ public final class SbpBridge {
         if (key != null) {
             PendingTask task = pendingTasks.get(key);
             if (task != null) {
-                pendingTasks.put(key, new PendingTask(task.pos(), task.required(), task.manual(),
-                        new HashSet<>(missingTypes), task.storedAt()));
+                task.missing = new HashSet<>(missingTypes);
             }
         }
         for (Item item : missingTypes) {
@@ -121,32 +132,54 @@ public final class SbpBridge {
             LOGGER.info("[sbp] 背包里没有 {}（{} tick 内不再请求）", itemId, NO_STOCK_TICKS);
             return;
         }
-        LOGGER.info("[sbp] 取料成功 {} ⇒ 重提交填充任务", itemId);
-        resubmitReadyTasks();
+        LOGGER.info("[sbp] 取料成功 {} ⇒ 等背包同步后重提交填充任务", itemId);
+        long armAt = System.currentTimeMillis();
+        for (PendingTask task : pendingTasks.values()) {
+            if (task.armedAt == 0L) {
+                task.armedAt = armAt;
+            }
+        }
     }
 
-    private static void resubmitReadyTasks() {
+    /**
+     * 每客户端 tick 调：把"已取到货"的任务在背包同步完成后重新提交。
+     *
+     * <p>⚠️ 不能只在回包里立刻重提交：回包先到、客户端背包同步后到，立刻提交仍会被判缺料
+     * （2026-11-03 实测：这就是"要按两次"的原因之一）。所以这里按 tick 重试，最多等 2 秒。
+     */
+    public static void tick() {
         if (pendingTasks.isEmpty()) {
             return;
         }
-        AutoFillerStateMachine machine = AutoFillerStateMachine.getInstance();
+        long now = System.currentTimeMillis();
+        AutoFillerStateMachine machine = null;
         for (PendingTask task : new java.util.ArrayList<>(pendingTasks.values())) {
-            Set<Item> missing = task.missing();
-            if (missing == null || missing.isEmpty() || !allInInventory(missing)) {
-                continue;   // 还有没到的材料 ⇒ 等下一次回包
+            if (now - task.storedAt > 10_000L) {
+                pendingTasks.remove(task.pos.toShortString());
+                continue;
+            }
+            if (task.armedAt == 0L) {
+                continue;                       // 还没取到货
+            }
+            boolean ready = task.missing == null || task.missing.isEmpty() || allInInventory(task.missing);
+            if (!ready && now - task.armedAt < 2000L) {
+                continue;                       // 等背包同步
+            }
+            if (machine == null) {
+                machine = AutoFillerStateMachine.getInstance();
             }
             try {
-                machine.clearFailedContainer(task.pos());
-                if (task.manual()) {
-                    machine.addManualTask(task.pos(), task.required());
+                machine.clearFailedContainer(task.pos);
+                if (task.manual) {
+                    machine.addManualTask(task.pos, task.required);
                 } else {
-                    machine.addTask(task.pos(), task.required());
+                    machine.addTask(task.pos, task.required);
                 }
-                LOGGER.info("[sbp] 已自动重提交填充任务 {}", task.pos());
+                LOGGER.info("[sbp] 已自动重提交填充任务 {}", task.pos);
             } catch (Throwable error) {
-                LOGGER.warn("[sbp] 重提交填充任务失败 {}", task.pos(), error);
+                LOGGER.warn("[sbp] 重提交填充任务失败 {}", task.pos, error);
             }
-            pendingTasks.remove(task.pos().toShortString());
+            pendingTasks.remove(task.pos.toShortString());
         }
     }
 

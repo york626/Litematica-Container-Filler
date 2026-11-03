@@ -17,6 +17,7 @@
     "WidgetListMaterialListMixin",
     "WidgetMaterialListEntryMixin",
     "MaterialListBaseMixin",
+    "compat.sbp.mixin.MaterialListUtilsSbpMixin",
     "BlockEntityMixin",
     "LootableContainerBlockEntityMixin",
     "CrafterBlockEntityMixin",

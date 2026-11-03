@@ -36,6 +36,9 @@ public class GuiConfigs extends GuiConfigsBase {
 
     public GuiConfigs(Screen parent) {
         super(LIST_X, getListYForTab(), Reference.MOD_ID, parent, "litematica_container_filler.gui.title.configs");
+        // 标题栏带版本号（Ray 2026-11-03 要求，便于确认跑的是哪一版）
+        this.title = fi.dy.masa.malilib.util.StringUtils.translate(
+                "litematica_container_filler.gui.title.configs") + " v" + Reference.MOD_VERSION;
     }
 
     public GuiConfigs() {

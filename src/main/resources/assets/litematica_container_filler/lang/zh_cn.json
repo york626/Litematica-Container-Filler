@@ -398,5 +398,7 @@
   "litematica_container_filler.message.manual_override_needs_fill": "§e[容器填充] 已标记为需要填充：该容器会保持高亮并参与填充。",
   "litematica_container_filler.message.manual_override_cleared": "§b[容器填充] 已清除 %s 个容器手动标记。",
   "litematica_container_filler.config.name.enableSbpExtraction": "快捷精妙背包提取",
-  "litematica_container_filler.config.comment.enableSbpExtraction": "缺料时从精妙背包（Sophisticated Backpacks）取出所需材料，并自动继续填充（只需按一次填充键）。需要安装精妙背包。"
+  "litematica_container_filler.config.comment.enableSbpExtraction": "缺料时从精妙背包（Sophisticated Backpacks）取出所需材料，并自动继续填充（只需按一次填充键）。需要安装精妙背包。",
+  "litematica_container_filler.config.name.enableSbpShulkerCount": "材料列表计入背包内潜影盒",
+  "litematica_container_filler.config.comment.enableSbpShulkerCount": "材料列表/HUD 的「已有数量」会把精妙背包里潜影盒（与收纳袋）的内容也算进去。上游精妙核心只统计背包每一格、不展开里面的原版容器；本开关补这一层。"
 }
