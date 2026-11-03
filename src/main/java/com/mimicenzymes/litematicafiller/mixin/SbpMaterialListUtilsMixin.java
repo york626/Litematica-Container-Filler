@@ -1,4 +1,4 @@
-package com.mimicenzymes.litematicafiller.compat.sbp.mixin;
+package com.mimicenzymes.litematicafiller.mixin;
 
 import com.mimicenzymes.litematicafiller.compat.sbp.SbpSupport;
 import com.mimicenzymes.litematicafiller.config.Configs;
@@ -33,7 +33,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * {@code ITrackedContentsItemHandler} 的方法会解析不到 MC 类；反射可绕开。
  */
 @Mixin(value = MaterialListUtils.class, remap = false)
-public abstract class MaterialListUtilsSbpMixin {
+public abstract class SbpMaterialListUtilsMixin {
     private static final String STORAGE_IFACE = "net.p3pp3rf1y.sophisticatedcore.api.IStorageWrapper";
     private static final String HANDLER_CLASS = "net.p3pp3rf1y.sophisticatedcore.inventory.InventoryHandler";
 
