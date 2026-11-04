@@ -183,7 +183,12 @@ public final class SbpServerExtract {
         try {
             Item item = Registries.ITEM.get(itemId);
             if (item != null) {
-                int moved = insertIntoBackpacks(player, item, Math.max(1, count));
+                int want = Math.max(1, count);
+                // 「有序存放」优先：塞进背包里**已经装着同种物品**的潜影盒
+                int moved = insertIntoMatchingShulker(player, item, want);
+                if (moved < want) {
+                    moved += insertIntoBackpacks(player, item, want - moved);
+                }
                 if (moved > 0) {
                     int taken = removeFromPlayerInventory(player, item, moved);
                     LOGGER.info("[sbp] 已把 {} x{} 存回精妙背包", itemId, taken);
@@ -196,6 +201,84 @@ public final class SbpServerExtract {
             LOGGER.warn("[sbp] 回存 {} 失败", itemId, error);
         }
         ServerPlayNetworking.send(player, new SbpPayloads.Result(itemId, reason));
+    }
+
+    private static Method slotStackSetter;
+
+    /**
+     * 「有序存放」的背包版：把物品塞进背包里**已经装着同种物品**的潜影盒（先补未满的堆，再放空格）。
+     * 找不到同内容盒就返回 0，由调用方退回"散放进背包"。
+     */
+    private static int insertIntoMatchingShulker(ServerPlayerEntity player, Item item, int count) {
+        int[] moved = {0};
+        PlayerInventoryProvider.get().runOnBackpacks(player, (backpackStack, invIdentifier, identifier, slot) -> {
+            ITrackedContentsItemHandler handler = handlerOf(backpackStack);
+            try {
+                ensureReflection();
+                if (slotStackSetter == null) {
+                    slotStackSetter = Class.forName("net.p3pp3rf1y.sophisticatedcore.inventory.InventoryHandler")
+                            .getMethod("setSlotStack", int.class, ItemStack.class);
+                }
+                int slots = (Integer) slotCountGetter.invoke(handler);
+                for (int i = 0; i < slots && moved[0] < count; i++) {
+                    ItemStack shulker = (ItemStack) slotStackGetter.invoke(handler, i);
+                    if (shulker == null || shulker.isEmpty() || !isShulker(shulker)) {
+                        continue;
+                    }
+                    ContainerComponent container = shulker.get(DataComponentTypes.CONTAINER);
+                    if (container == null) {
+                        continue;
+                    }
+                    DefaultedList<ItemStack> contents = DefaultedList.ofSize(CONTAINER_BUFFER, ItemStack.EMPTY);
+                    container.copyTo(contents);
+
+                    // 先确认这个盒子里确实有同种物品（有序存放的"同类归位"）
+                    boolean sameContent = false;
+                    for (ItemStack inner : contents) {
+                        if (!inner.isEmpty() && inner.isOf(item)) {
+                            sameContent = true;
+                            break;
+                        }
+                    }
+                    if (!sameContent) {
+                        continue;
+                    }
+
+                    int placed = 0;
+                    // ① 补未满的同类堆
+                    for (int i2 = 0; i2 < contents.size() && placed < count - moved[0]; i2++) {
+                        ItemStack inner = contents.get(i2);
+                        if (inner.isEmpty() || !inner.isOf(item) || inner.getCount() >= inner.getMaxCount()) {
+                            continue;
+                        }
+                        int add = Math.min(inner.getMaxCount() - inner.getCount(), count - moved[0] - placed);
+                        inner.increment(add);
+                        placed += add;
+                    }
+                    // ② 再放空格
+                    for (int i2 = 0; i2 < contents.size() && placed < count - moved[0]; i2++) {
+                        if (!contents.get(i2).isEmpty()) {
+                            continue;
+                        }
+                        int add = Math.min(item.getMaxCount(), count - moved[0] - placed);
+                        contents.set(i2, new ItemStack(item, add));
+                        placed += add;
+                    }
+                    if (placed <= 0) {
+                        continue;
+                    }
+                    ItemStack updated = shulker.copy();
+                    updated.set(DataComponentTypes.CONTAINER, ContainerComponent.fromStacks(contents));
+                    slotStackSetter.invoke(handler, i, updated);
+                    moved[0] += placed;
+                    LOGGER.info("[sbp] 有序存放：{} x{} → 背包里的同类潜影盒", Registries.ITEM.getId(item), placed);
+                }
+            } catch (Throwable error) {
+                LOGGER.warn("[sbp] 有序存放（同类潜影盒）失败", error);
+            }
+            return moved[0] >= count;
+        });
+        return moved[0];
     }
 
     private static int insertIntoBackpacks(ServerPlayerEntity player, Item item, int count) {
