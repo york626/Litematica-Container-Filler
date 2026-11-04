@@ -759,6 +759,11 @@ public class GuiRenderEditor extends GuiBase {
             rows = Math.max(1, (int)Math.ceil(controlCount / (double)columns));
             width = Math.max(104, (availableW - gap * (columns - 1)) / columns);
         }
+        // 一页必须装得下：行数按可用高度收敛，装不下的走分页（2026-11-04：否则最后一排会被面板底挡掉）
+        int maxRows = Math.max(1, availableH / rowH);
+        if (rows > maxRows) {
+            rows = maxRows;
+        }
         return new ControlLayout(startX, startY, width, rowH, rows, gap, columns);
     }
 
