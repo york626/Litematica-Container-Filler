@@ -288,23 +288,29 @@ public final class SbpBridge {
         if (client.player == null || client.world == null || !SbpPayloads.canSend()) {
             return;
         }
-        int freeSlots = 0;
-        for (int slot = 0; slot < Math.min(36, client.player.getInventory().size()); slot++) {
-            if (client.player.getInventory().getStack(slot).isEmpty()) {
-                freeSlots++;
-            }
-        }
-        if (freeSlots < 2) {
-            return; // 还很挤，等填充把东西消耗掉
-        }
+        // 按"这件物品能不能放下"判断（有空格 或 有同类未满堆），而不是死要 2 个空格
+        // （2026-11-04 Ray 实测：只剩 1 格时空桶永远取不回）
         java.util.Iterator<Map.Entry<Item, Integer>> it = stashedForReturn.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Item, Integer> entry = it.next();
+            Item item = entry.getKey();
+            boolean room = false;
+            for (int slot = 0; slot < Math.min(36, client.player.getInventory().size()); slot++) {
+                ItemStack stack = client.player.getInventory().getStack(slot);
+                if (stack.isEmpty()
+                        || (stack.isOf(item) && stack.getCount() < stack.getMaxCount())) {
+                    room = true;
+                    break;
+                }
+            }
+            if (!room) {
+                return; // 这件还放不下，等填充消耗掉一些
+            }
             lastReturnAttempt = now;
-            SbpPayloads.sendExtract(Registries.ITEM.getId(entry.getKey()), entry.getValue());
-            LOGGER.info("[sbp] 取回暂存物品 {} x{}", Registries.ITEM.getId(entry.getKey()), entry.getValue());
+            SbpPayloads.sendExtract(Registries.ITEM.getId(item), entry.getValue());
+            LOGGER.info("[sbp] 取回暂存物品 {} x{}", Registries.ITEM.getId(item), entry.getValue());
             it.remove();
-            break;
+            return;
         }
     }
 
