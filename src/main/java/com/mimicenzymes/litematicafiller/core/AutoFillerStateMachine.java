@@ -118,6 +118,11 @@ public class AutoFillerStateMachine {
 
     private final Set<StrictItemStackKey> borrowedItems = new HashSet<>();
     private final Map<StrictItemStackKey, Integer> stashedItemCounts = new HashMap<>();
+    /** 记账：哪个玩家背包槽位的潜影盒里存了哪些东西（归还时按盒逐个还）。 */
+    private final Map<Integer, Map<StrictItemStackKey, Integer>> stashedByShulker = new HashMap<>();
+    /** 「归还」独立于任务生命周期：任务被打断/重提交也不会把东西忘在盒子里（2026-11-04）。 */
+    private boolean returnPending = false;
+    private final java.util.Deque<Integer> pendingReturnSlots = new java.util.ArrayDeque<>();
     private final Map<StrictItemStackKey, OrderlyStoredItem> orderlyStoredItems = new HashMap<>();
 
     private final Set<Integer> openedShulkerSlots = new LinkedHashSet<>();
@@ -847,11 +852,22 @@ public class AutoFillerStateMachine {
             return;
         }
 
+        if (returnPending && currentTask == null && actionQueue.isEmpty()) {
+            drivePendingReturn(client);
+            return;
+        }
+
         if (currentTask == null) {
             if (!taskQueue.isEmpty()) {
                 currentTask = pollBestTask(client);
                 if (currentTask == null) return;
                 borrowedItems.clear();
+                if (!stashedItemCounts.isEmpty() && !stashedByShulker.isEmpty()) {
+                    // 上个任务的东西还在盒子里 ⇒ 交给独立的归还流程，别跟着 openedShulkerSlots 一起清掉
+                    returnPending = true;
+                    pendingReturnSlots.clear();
+                    pendingReturnSlots.addAll(stashedByShulker.keySet());
+                }
                 openedShulkerSlots.clear();
                 shulkerMisses.clear();
                 consecutiveFailures = 0;
@@ -1251,6 +1267,10 @@ public class AutoFillerStateMachine {
         if (!stackToStash.isEmpty()) {
             StrictItemStackKey key = new StrictItemStackKey(stackToStash);
             stashedItemCounts.put(key, stashedItemCounts.getOrDefault(key, 0) + stackToStash.getCount());
+            if (activeShulkerSlot >= 0) {
+                stashedByShulker.computeIfAbsent(activeShulkerSlot, k -> new HashMap<>())
+                        .merge(key, stackToStash.getCount(), Integer::sum);
+            }
         }
 
         client.interactionManager.clickSlot(h.syncId, uiSlot, 0, SlotActionType.QUICK_MOVE, client.player);
@@ -2240,7 +2260,14 @@ public class AutoFillerStateMachine {
 
             stashedItemCounts.entrySet().removeIf(entry -> entry.getValue() <= 0);
 
-            if (!openedShulkerSlots.isEmpty() && (!borrowedItems.isEmpty() || !stashedItemCounts.isEmpty())) {
+            if (!stashedItemCounts.isEmpty()) {
+                // 有未归还的记录 ⇒ 不管本次开过哪些盒，都按记账的盒去还
+                returnPending = true;
+                pendingReturnSlots.clear();
+                pendingReturnSlots.addAll(stashedByShulker.keySet());
+            }
+            if ((!openedShulkerSlots.isEmpty() || !pendingReturnSlots.isEmpty())
+                    && (!borrowedItems.isEmpty() || !stashedItemCounts.isEmpty())) {
                 pendingShulkers.clear();
                 pendingShulkers.addAll(openedShulkerSlots);
                 changePhase(Phase.RETURNING);
@@ -2355,6 +2382,42 @@ public class AutoFillerStateMachine {
         inventoryHandler.setCursorStack(ItemStack.EMPTY);
     }
 
+    /**
+     * 独立的「归还未完成」驱动（2026-11-04：Ray 报斧子被塞进潜影盒后没还回来）。
+     *
+     * <p>原逻辑只在"本次任务开过的盒"里找，且任务被打断/重提交时 `openedShulkerSlots` 会被清空 ⇒ 记账被丢。
+     * 现在按 `stashedByShulker` 里的盒逐个重开、把东西挪回玩家背包（优先空格/同类堆），
+     * 实在找不到就明确提示玩家"哪件东西还在哪个盒子"。
+     */
+    private void drivePendingReturn(MinecraftClient client) {
+        if (client.player == null) {
+            return;
+        }
+        if (stashedItemCounts.isEmpty()) {
+            finishPendingReturn(client, true);
+            return;
+        }
+        if (client.player.currentScreenHandler != client.player.playerScreenHandler) {
+            return; // 等当前界面关掉
+        }
+        if (pendingReturnSlots.isEmpty()) {
+            finishPendingReturn(client, false);
+            return;
+        }
+        changePhase(Phase.RETURNING);
+        openShulkerBox(client, pendingReturnSlots.poll());
+    }
+
+    private void finishPendingReturn(MinecraftClient client, boolean allReturned) {
+        returnPending = false;
+        pendingReturnSlots.clear();
+        stashedByShulker.clear();
+        stashedItemCounts.clear();
+        if (!allReturned) {
+            sendFeedback(client, "§e[容器填充] 有部分暂存物品没找到对应潜影盒，请手动检查背包里的潜影盒", true);
+        }
+    }
+
     private void reset() {
         aborting = false;
         currentTask = null;
@@ -2378,7 +2441,11 @@ public class AutoFillerStateMachine {
         stashItemSlot = -1;
         pendingTakeItOutRequest = null;
         borrowedItems.clear();
-        stashedItemCounts.clear();
+        if (!returnPending) {
+            stashedItemCounts.clear();
+            stashedByShulker.clear();
+            pendingReturnSlots.clear();
+        }
         orderlyStoredItems.clear();
         openedShulkerSlots.clear();
         shulkerMisses.clear();
