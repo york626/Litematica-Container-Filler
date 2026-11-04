@@ -43,6 +43,8 @@ public final class SbpServerExtract {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("litematica_container_filler");
 
+    /** 容器内容缓冲：原版潜影盒 27 格，但「增强潜影盒」下界合金/钻石是 108 格 ⇒ 不能按 27 写死（2026-11-04 踩过）。 */
+    private static final int CONTAINER_BUFFER = 256;
     private static final int RECENT_PROTECT_TICKS = 600;
     private static final Map<UUID, Map<Item, Long>> recentRequests = new HashMap<>();
 
@@ -160,7 +162,7 @@ public final class SbpServerExtract {
                 if (container == null) {
                     continue;
                 }
-                DefaultedList<ItemStack> contents = DefaultedList.ofSize(27, ItemStack.EMPTY);
+                DefaultedList<ItemStack> contents = DefaultedList.ofSize(CONTAINER_BUFFER, ItemStack.EMPTY);
                 container.copyTo(contents);
                 for (ItemStack inner : contents) {
                     if (!inner.isEmpty() && inner.isOf(item)) {

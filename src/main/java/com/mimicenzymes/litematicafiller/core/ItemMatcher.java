@@ -12,6 +12,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ItemMatcher {
+    /** 容器内容缓冲：原版潜影盒 27 格，但「增强潜影盒」下界合金/钻石是 108 格 ⇒ 不能按 27 写死（2026-11-04 踩过）。 */
+    private static final int CONTAINER_BUFFER = 256;
+
 
     public static boolean isSameItem(ItemStack current, ItemStack required) {
         if (current.isEmpty() || required.isEmpty()) return false;
@@ -73,7 +76,7 @@ public class ItemMatcher {
         ContainerComponent container = stack.get(DataComponentTypes.CONTAINER);
         if (container == null) return List.of();
 
-        DefaultedList<ItemStack> copiedSlots = DefaultedList.ofSize(27, ItemStack.EMPTY);
+        DefaultedList<ItemStack> copiedSlots = DefaultedList.ofSize(CONTAINER_BUFFER, ItemStack.EMPTY);
         container.copyTo(copiedSlots);
 
         List<ItemStack> slots = new ArrayList<>(copiedSlots.size());
