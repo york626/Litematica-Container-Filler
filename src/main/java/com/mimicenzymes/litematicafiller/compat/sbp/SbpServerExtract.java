@@ -1,6 +1,12 @@
 package com.mimicenzymes.litematicafiller.compat.sbp;
 
+import java.lang.reflect.Method;
 import java.util.HashMap;
+import net.minecraft.block.ShulkerBoxBlock;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.ContainerComponent;
+import net.minecraft.item.BlockItem;
+import net.minecraft.util.collection.DefaultedList;
 import java.util.Map;
 import java.util.UUID;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -81,6 +87,14 @@ public final class SbpServerExtract {
 
             ItemStack simulated = InventoryHelper.extractFromInventory(item, toExtract, handler, true);
             if (simulated.isEmpty()) {
+                // 背包里没有散装材料 ⇒ 看看是不是装在某个潜影盒里（2026-11-04 Ray 报：
+                // 材料装潜影盒、潜影盒放背包 ⇒ 填充机认不出）
+                int nested = extractFromShulkerInsideBackpack(player, item, handler, toExtract);
+                if (nested > 0) {
+                    extracted[0] = true;
+                    LOGGER.info("[sbp] 已从背包内潜影盒取出 {} x{}", Registries.ITEM.getId(item), nested);
+                    return true;
+                }
                 return false;
             }
             ItemStack moved = InventoryHelper.extractFromInventory(item, simulated.getCount(), handler, false);
@@ -99,6 +113,101 @@ public final class SbpServerExtract {
             return true;
         });
         return extracted[0];
+    }
+
+    private static Method slotCountGetter;
+    private static Method slotStackGetter;
+    private static Method slotStackSetter;
+
+    /**
+     * 从"背包里的潜影盒"中取材料：直接改盒内内容，把材料塞进玩家背包。
+     *
+     * <p>用反射调 {@code InventoryHandler.getSlotStack / setSlotStack}（精妙 jar 是 intermediary 命名）。
+     */
+    @SuppressWarnings("unchecked")
+    private static int extractFromShulkerInsideBackpack(ServerPlayerEntity player, Item item,
+                                                        ITrackedContentsItemHandler handler, int limit) {
+        if (limit <= 0) {
+            return 0;
+        }
+        try {
+            if (slotStackGetter == null || slotStackSetter == null) {
+                Class<?> handlerClass = Class.forName("net.p3pp3rf1y.sophisticatedcore.inventory.InventoryHandler");
+                slotCountGetter = handlerClass.getMethod("getSlotCount");
+                slotStackGetter = handlerClass.getMethod("getSlotStack", int.class);
+                slotStackSetter = handlerClass.getMethod("setSlotStack", int.class, ItemStack.class);
+            }
+            int slots = (Integer) slotCountGetter.invoke(handler);
+            int collected = 0;
+            for (int slot = 0; slot < slots && collected < limit; slot++) {
+                ItemStack shulker = (ItemStack) slotStackGetter.invoke(handler, slot);
+                if (shulker == null || shulker.isEmpty() || !isShulker(shulker)) {
+                    continue;
+                }
+                ContainerComponent container = shulker.get(DataComponentTypes.CONTAINER);
+                if (container == null) {
+                    continue;
+                }
+                DefaultedList<ItemStack> contents = DefaultedList.ofSize(27, ItemStack.EMPTY);
+                container.copyTo(contents);
+                int taken = 0;
+                for (int i = 0; i < contents.size() && collected + taken < limit; i++) {
+                    ItemStack inner = contents.get(i);
+                    if (inner.isEmpty() || !inner.isOf(item)) {
+                        continue;
+                    }
+                    int take = Math.min(inner.getCount(), limit - collected - taken);
+                    inner.decrement(take);
+                    if (inner.isEmpty()) {
+                        contents.set(i, ItemStack.EMPTY);
+                    }
+                    taken += take;
+                }
+                if (taken <= 0) {
+                    continue;
+                }
+                ItemStack updated = shulker.copy();
+                updated.set(DataComponentTypes.CONTAINER, ContainerComponent.fromStacks(contents));
+                slotStackSetter.invoke(handler, slot, updated);
+
+                ItemStack give = new ItemStack(item, taken);
+                ItemStack leftover = InventoryHelper.mergeIntoPlayerInventory(player, give, 0);
+                collected += taken - (leftover == null ? 0 : leftover.getCount());
+                if (leftover != null && !leftover.isEmpty()) {
+                    // 背包空间按 capacity 事先算过，理论上不该有残留 —— 放回盒里
+                    innerReturn(shulker, item, leftover.getCount());
+                }
+            }
+            return collected;
+        } catch (Throwable error) {
+            LOGGER.warn("[sbp] 从背包内潜影盒取料失败", error);
+            return 0;
+        }
+    }
+
+    private static boolean isShulker(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem blockItem
+                && blockItem.getBlock() instanceof ShulkerBoxBlock;
+    }
+
+    /** 兜底：把没塞进背包的残留放回原潜影盒（理论上不可达）。 */
+    private static void innerReturn(ItemStack shulker, Item item, int count) {
+        try {
+            ContainerComponent container = shulker.get(DataComponentTypes.CONTAINER);
+            if (container == null) {
+                return;
+            }
+            DefaultedList<ItemStack> contents = DefaultedList.ofSize(27, ItemStack.EMPTY);
+            container.copyTo(contents);
+            for (int i = 0; i < contents.size(); i++) {
+                if (contents.get(i).isEmpty()) {
+                    contents.set(i, new ItemStack(item, count));
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+            // 放不回去就算了，绝不掉地上以外的手段
+        }
     }
 
     private static int capacity(ServerPlayerEntity player, Item item) {
