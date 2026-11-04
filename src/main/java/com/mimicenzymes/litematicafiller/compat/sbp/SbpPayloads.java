@@ -76,15 +76,16 @@ public final class SbpPayloads {
         }
     }
 
-    /** S2C：结果（reason 见常量）。 */
-    public record Result(Identifier itemId, int reason) implements CustomPayload {
+    /** S2C：结果（reason 见常量）。payload = 服务端"代为腾位"的物品列表（id=count;…），客户端据此登记待取回。 */
+    public record Result(Identifier itemId, int reason, String stashed) implements CustomPayload {
         public static final Id<Result> ID =
                 new Id<>(Identifier.of("litematica_container_filler", "sbp_result"));
 
         public static final PacketCodec<RegistryByteBuf, Result> CODEC = PacketCodec.tuple(
                 PacketCodecs.STRING, p -> p.itemId.toString(),
                 PacketCodecs.VAR_INT, Result::reason,
-                (idStr, reason) -> new Result(Identifier.of(idStr), reason));
+                PacketCodecs.STRING, r -> r.stashed() == null ? "" : r.stashed(),
+                (idStr, reason, stashed) -> new Result(Identifier.of(idStr), reason, stashed));
 
         @Override
         public Id<? extends CustomPayload> getId() {
@@ -92,7 +93,7 @@ public final class SbpPayloads {
         }
 
         public static void receive(Result payload, ClientPlayNetworking.Context context) {
-            SbpBridge.onResponse(payload.itemId(), payload.reason());
+            SbpBridge.onResponse(payload.itemId(), payload.reason(), payload.stashed());
         }
     }
 

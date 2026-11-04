@@ -161,9 +161,11 @@ public final class SbpBridge {
     }
 
     /** 服务端回包：reason 0=成功 / 1=没找到 / 2=空间不足。 */
-    public static void onResponse(Identifier itemId, int reason) {
+    public static void onResponse(Identifier itemId, int reason, String stashed) {
         Item item = Registries.ITEM.get(itemId);
         waiting.remove(item);
+        waitingSince.remove(item);
+        registerStashed(stashed);
         MinecraftClient client = MinecraftClient.getInstance();
         long now = client.world == null ? 0L : client.world.getTime();
         if (reason != SbpPayloads.OK) {
@@ -347,6 +349,28 @@ public final class SbpBridge {
             request(item);
             LOGGER.info("[sbp] 请求取回暂存物品 {} x{}", Registries.ITEM.getId(item), entry.getValue());
             return;
+        }
+    }
+
+    /** 服务端为了腾位把哪些东西塞进背包了 ⇒ 记进待取回清单（填充结束后自动取回）。 */
+    private static void registerStashed(String stashed) {
+        if (stashed == null || stashed.isBlank()) {
+            return;
+        }
+        for (String part : stashed.split(";")) {
+            int eq = part.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            try {
+                Identifier id = Identifier.of(part.substring(0, eq));
+                int amount = Integer.parseInt(part.substring(eq + 1));
+                Item item = Registries.ITEM.get(id);
+                stashedForReturn.merge(item, amount, Integer::sum);
+                LOGGER.info("[sbp] 登记待取回：{} x{}", id, amount);
+            } catch (Throwable ignored) {
+                // 单个解析失败不影响其它
+            }
         }
     }
 

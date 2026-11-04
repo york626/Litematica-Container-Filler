@@ -56,6 +56,7 @@ public final class SbpServerExtract {
 
     public static void extract(ServerPlayerEntity player, Identifier itemId, int count) {
         int reason = SbpPayloads.NOT_FOUND;
+        lastStashed.clear();
         try {
             Item item = Registries.ITEM.get(itemId);
             if (item != null) {
@@ -66,7 +67,25 @@ public final class SbpServerExtract {
             LOGGER.warn("[sbp] 取料 {} 失败", itemId, error);
             reason = SbpPayloads.NOT_FOUND;
         }
-        ServerPlayNetworking.send(player, new SbpPayloads.Result(itemId, reason));
+        ServerPlayNetworking.send(player, new SbpPayloads.Result(itemId, reason, stashedSummary()));
+    }
+
+    /** 本次请求里"为了让出空间"被塞进背包的物品（客户端要据此登记待取回）。 */
+    private static final Map<Item, Integer> lastStashed = new HashMap<>();
+
+    private static String stashedSummary() {
+        if (lastStashed.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        lastStashed.forEach((item, amount) -> {
+            if (sb.length() > 0) {
+                sb.append(';');
+            }
+            sb.append(Registries.ITEM.getId(item)).append('=').append(amount);
+        });
+        lastStashed.clear();
+        return sb.toString();
     }
 
     private static int doExtract(ServerPlayerEntity player, Item item, int count) {
@@ -150,14 +169,18 @@ public final class SbpServerExtract {
     }
 
     private static Integer findShulkerSlot(ITrackedContentsItemHandler handler, Item item) {
+        int shulkerCount = 0;
+        int scanned = 0;
         try {
             ensureReflection();
             int slots = (Integer) slotCountGetter.invoke(handler);
+            scanned = slots;
             for (int slot = 0; slot < slots; slot++) {
                 ItemStack stack = (ItemStack) slotStackGetter.invoke(handler, slot);
                 if (stack == null || stack.isEmpty() || !isShulker(stack)) {
                     continue;
                 }
+                shulkerCount++;
                 ContainerComponent container = stack.get(DataComponentTypes.CONTAINER);
                 if (container == null) {
                     continue;
@@ -172,6 +195,10 @@ public final class SbpServerExtract {
             }
         } catch (Throwable error) {
             LOGGER.warn("[sbp] 扫描背包内潜影盒失败", error);
+        }
+        if (shulkerCount > 0) {
+            LOGGER.info("[sbp] 扫描背包：{} 格 / {} 个潜影盒，均未含 {}", scanned, shulkerCount,
+                    Registries.ITEM.getId(item));
         }
         return null;
     }
@@ -200,7 +227,7 @@ public final class SbpServerExtract {
         } catch (Throwable error) {
             LOGGER.warn("[sbp] 回存 {} 失败", itemId, error);
         }
-        ServerPlayNetworking.send(player, new SbpPayloads.Result(itemId, reason));
+        ServerPlayNetworking.send(player, new SbpPayloads.Result(itemId, reason, stashedSummary()));
     }
 
     private static Method slotStackSetter;
@@ -384,8 +411,10 @@ public final class SbpServerExtract {
             }
             Item item = stack.getItem();
             int count = stack.getCount();
-            if (insertIntoBackpacks(player, item, count) > 0) {
-                removeFromPlayerInventory(player, item, count);
+            int moved = insertIntoBackpacks(player, item, count);
+            if (moved > 0) {
+                removeFromPlayerInventory(player, item, moved);
+                lastStashed.merge(item, moved, Integer::sum);
                 LOGGER.info("[sbp] 背包已满，回存 {} x{} 腾位置", Registries.ITEM.getId(item), count);
                 return;
             }
