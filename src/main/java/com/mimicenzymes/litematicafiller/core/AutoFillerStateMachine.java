@@ -575,6 +575,11 @@ public class AutoFillerStateMachine {
                     sendFeedback(client, Text.translatable("litematica_container_filler.message.task_dispatched").getString(), true);
                     return true;
                 }
+                // 精妙背包版「有序存放」：潜影盒都腾不出位置时，先把背包里的杂物塞回精妙背包
+                if (com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge
+                        .tryStashIntoBackpack(currentTask.targetPos, currentTask.requiredItems)) {
+                    return false;   // 等回存成功后会重提交任务
+                }
                 abortTask(client, "litematica_container_filler.message.inventory_full_no_stash", true, false);
                 return false;
             } else if (!trueMissingTypes.isEmpty()) {

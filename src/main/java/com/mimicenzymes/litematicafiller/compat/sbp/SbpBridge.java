@@ -117,27 +117,78 @@ public final class SbpBridge {
         lastRequestTick.put(item, now);
         waiting.add(item);
         Identifier id = Registries.ITEM.getId(item);
-        SbpPayloads.send(id, Math.max(1, item.getMaxCount()));
+        SbpPayloads.sendExtract(id, Math.max(1, item.getMaxCount()));
         LOGGER.info("[sbp] 填充机缺料 {} → 请求从精妙背包取货", id);
     }
 
-    /** 服务端回包：成功 ⇒ 重提交待填充任务；失败 ⇒ 该物品退避。 */
-    public static void onResponse(Identifier itemId, boolean success) {
+    /** 服务端回包：reason 0=成功 / 1=没找到 / 2=空间不足。 */
+    public static void onResponse(Identifier itemId, int reason) {
         Item item = Registries.ITEM.get(itemId);
         waiting.remove(item);
         MinecraftClient client = MinecraftClient.getInstance();
         long now = client.world == null ? 0L : client.world.getTime();
-        if (!success) {
+        if (reason != SbpPayloads.OK) {
             noStockUntil.put(item, now + NO_STOCK_TICKS);
-            LOGGER.info("[sbp] 背包里没有 {}（{} tick 内不再请求）", itemId, NO_STOCK_TICKS);
+            if (reason == SbpPayloads.NO_SPACE) {
+                LOGGER.info("[sbp] 背包空间不足，需要玩家清理");
+                toast("§c[背包] 空间不足：请清理出 1 格空间（或把东西放进箱子）再填充");
+            } else {
+                LOGGER.info("[sbp] 背包里没有 {}（{} tick 内不再请求）", itemId, NO_STOCK_TICKS);
+            }
             return;
         }
-        LOGGER.info("[sbp] 取料成功 {} ⇒ 等背包同步后重提交填充任务", itemId);
+        LOGGER.info("[sbp] 操作成功 {} ⇒ 等背包同步后重提交填充任务", itemId);
         long armAt = System.currentTimeMillis();
         for (PendingTask task : pendingTasks.values()) {
             if (task.armedAt == 0L) {
                 task.armedAt = armAt;
             }
+        }
+    }
+
+    /**
+     * 背包满、又没有可用的潜影盒腾位时：把最大的"非任务需求"物品塞回精妙背包。
+     *
+     * <p>Ray 2026-11-04：填充机的「有序存放」只认玩家背包里的潜影盒，希望也能用精妙背包。
+     *
+     * @return 是否已发出回存请求（发出后由服务端回包决定是否重提交任务）
+     */
+    public static boolean tryStashIntoBackpack(BlockPos pos, Map<Integer, ItemStack> required) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!enabled() || client.player == null || pos == null || required == null) {
+            return false;
+        }
+        java.util.Set<Item> needed = new java.util.HashSet<>();
+        for (ItemStack stack : required.values()) {
+            if (!stack.isEmpty()) {
+                needed.add(stack.getItem());
+            }
+        }
+        Item bestItem = null;
+        int bestCount = 0;
+        for (int slot = 9; slot < Math.min(36, client.player.getInventory().size()); slot++) {
+            ItemStack stack = client.player.getInventory().getStack(slot);
+            if (stack.isEmpty() || needed.contains(stack.getItem())) {
+                continue;
+            }
+            if (stack.getCount() > bestCount) {
+                bestCount = stack.getCount();
+                bestItem = stack.getItem();
+            }
+        }
+        if (bestItem == null || bestCount <= 0 || !SbpPayloads.canSend()) {
+            return false;
+        }
+        rememberTask(pos, required, true);
+        SbpPayloads.sendStore(Registries.ITEM.getId(bestItem), bestCount);
+        LOGGER.info("[sbp] 背包满 ⇒ 请求把 {} x{} 存回精妙背包腾位", Registries.ITEM.getId(bestItem), bestCount);
+        return true;
+    }
+
+    private static void toast(String message) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            client.player.sendMessage(net.minecraft.text.Text.literal(message), true);
         }
     }
 
