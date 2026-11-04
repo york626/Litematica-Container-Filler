@@ -174,6 +174,9 @@ public final class SbpBridge {
             return;
         }
         LOGGER.info("[sbp] 操作成功 {} ⇒ 等背包同步后重提交填充任务", itemId);
+        if (stashedForReturn.remove(item) != null) {
+            LOGGER.info("[sbp] 暂存物品 {} 已取回", itemId);
+        }
         long armAt = System.currentTimeMillis();
         for (PendingTask task : pendingTasks.values()) {
             if (task.armedAt == 0L) {
@@ -307,9 +310,10 @@ public final class SbpBridge {
                 return; // 这件还放不下，等填充消耗掉一些
             }
             lastReturnAttempt = now;
-            SbpPayloads.sendExtract(Registries.ITEM.getId(item), entry.getValue());
-            LOGGER.info("[sbp] 取回暂存物品 {} x{}", Registries.ITEM.getId(item), entry.getValue());
-            it.remove();
+            // ⚠️ 不要在这里把 entry 删掉：只有**成功回包**才删（2026-11-04 Ray 报"没归还"：
+            //    原先发出去就删，一旦那次请求失败就永久丢失重试机会）
+            request(item);
+            LOGGER.info("[sbp] 请求取回暂存物品 {} x{}", Registries.ITEM.getId(item), entry.getValue());
             return;
         }
     }
