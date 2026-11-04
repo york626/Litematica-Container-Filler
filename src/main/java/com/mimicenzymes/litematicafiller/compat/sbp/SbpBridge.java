@@ -32,6 +32,8 @@ public final class SbpBridge {
     private static final int NO_STOCK_TICKS = 200;
 
     private static final Set<Item> waiting = new HashSet<>();
+    /** waiting 的起始 tick（自愈用：回包丢了不能永久卡住这个物品）。 */
+    private static final Map<Item, Long> waitingSince = new HashMap<>();
     private static final Map<Item, Long> lastRequestTick = new HashMap<>();
     private static final Map<Item, Long> noStockUntil = new HashMap<>();
 
@@ -152,6 +154,7 @@ public final class SbpBridge {
         }
         lastRequestTick.put(item, now);
         waiting.add(item);
+        waitingSince.put(item, now);
         Identifier id = Registries.ITEM.getId(item);
         SbpPayloads.sendExtract(id, Math.max(1, item.getMaxCount()));
         LOGGER.info("[sbp] 填充机缺料 {} → 请求从精妙背包取货", id);
@@ -240,6 +243,7 @@ public final class SbpBridge {
      * （2026-11-03 实测：这就是"要按两次"的原因之一）。所以这里按 tick 重试，最多等 2 秒。
      */
     public static void tick() {
+        expireStaleWaiting();
         tickReturnStash();
         if (pendingTasks.isEmpty()) {
             return;
@@ -276,12 +280,40 @@ public final class SbpBridge {
         }
     }
 
+    /** 回包丢了（服务器没回/被中断）时，200 tick 后自己解除等待，避免永久卡死。 */
+    private static void expireStaleWaiting() {
+        if (waiting.isEmpty()) {
+            return;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null) {
+            return;
+        }
+        long now = client.world.getTime();
+        java.util.Iterator<Item> it = waiting.iterator();
+        while (it.hasNext()) {
+            Item item = it.next();
+            Long since = waitingSince.get(item);
+            if (since != null && now - since > 200L) {
+                it.remove();
+                waitingSince.remove(item);
+                LOGGER.info("[sbp] 等待超时，解除 {} 的等待状态", Registries.ITEM.getId(item));
+            }
+        }
+    }
+
     private static long lastReturnAttempt = 0L;
+    private static long lastReturnDiag = 0L;
 
     /** 有空间时，把之前"暂存进背包"的物品取回来（每 500ms 最多试一件）。 */
     private static void tickReturnStash() {
         if (stashedForReturn.isEmpty()) {
             return;
+        }
+        long nowMs = System.currentTimeMillis();
+        if (nowMs - lastReturnDiag > 3000L) {
+            lastReturnDiag = nowMs;
+            LOGGER.info("[sbp] 待取回清单：{}", stashedForReturn);
         }
         long now = System.currentTimeMillis();
         if (now - lastReturnAttempt < 500L) {
