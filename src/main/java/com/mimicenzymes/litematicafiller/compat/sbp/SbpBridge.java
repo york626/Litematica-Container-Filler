@@ -74,6 +74,40 @@ public final class SbpBridge {
         }
     }
 
+    /**
+     * 提前取货：按下填充键时就把"背包里能补的材料"先请求出来，
+     * 让填充机判缺料时多半已经到货（减少一次"缺料→重试"的往返）。
+     */
+    public static void prefetchFor(Map<Integer, ItemStack> required) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!enabled() || client.player == null || required == null) {
+            return;
+        }
+        java.util.Set<Item> needed = new java.util.HashSet<>();
+        for (ItemStack stack : required.values()) {
+            if (!stack.isEmpty()) {
+                needed.add(stack.getItem());
+            }
+        }
+        java.util.Set<Item> inInventory = new java.util.HashSet<>();
+        for (int slot = 0; slot < Math.min(36, client.player.getInventory().size()); slot++) {
+            ItemStack stack = client.player.getInventory().getStack(slot);
+            if (!stack.isEmpty()) {
+                inInventory.add(stack.getItem());
+            }
+        }
+        for (Item item : needed) {
+            if (!inInventory.contains(item)) {
+                request(item);
+            }
+        }
+    }
+
+    /** 这个容器是否还处在"已请求取货、等着重提交"的状态（用来抑制"缺少材料"红字）。 */
+    public static boolean hasPending(BlockPos pos) {
+        return pos != null && pendingTasks.containsKey(pos.toShortString());
+    }
+
     /** 填充机判缺料时调用：按物品请求取货，并记下缺的是什么。 */
     public static void onMissing(BlockPos pos, Set<Item> missingTypes) {
         if (!enabled() || missingTypes == null || missingTypes.isEmpty()) {

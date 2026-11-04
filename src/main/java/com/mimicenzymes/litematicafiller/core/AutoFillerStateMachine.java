@@ -303,6 +303,7 @@ public class AutoFillerStateMachine {
     public boolean addTask(BlockPos pos, Map<Integer, ItemStack> requiredItems, boolean preferNearby) {
         if (requiredItems == null) return false;
         com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.rememberTask(pos, requiredItems, false);
+        com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.prefetchFor(requiredItems);
         pos = pos.toImmutable();
         if (ManualContainerOverrideManager.isCompleted(pos)) return false;
         if (isCreativeFillEnabled()) {
@@ -389,6 +390,7 @@ public class AutoFillerStateMachine {
     public void addManualTask(BlockPos pos, Map<Integer, ItemStack> requiredItems) {
         if (requiredItems == null) return;
         com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.rememberTask(pos, requiredItems, true);
+        com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.prefetchFor(requiredItems);
         failedContainers.remove(pos);
         RealContainerCache.remove(pos);
 
@@ -596,7 +598,10 @@ public class AutoFillerStateMachine {
                         break;
                     }
                 }
-                sendFeedback(client, Text.translatable("litematica_container_filler.message.material_shortage", sb.toString()).getString(), true);
+                // 精妙背包取货流程中就不要报"缺少材料"（材料正在从背包搬过来）
+                if (!com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.hasPending(currentTask.targetPos)) {
+                    sendFeedback(client, Text.translatable("litematica_container_filler.message.material_shortage", sb.toString()).getString(), true);
+                }
                 return false;
             } else {
                 abortTask(client, "litematica_container_filler.message.cursor_stuck", false, false);
