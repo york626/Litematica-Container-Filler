@@ -81,7 +81,13 @@ public class GuiRenderEditor extends GuiBase {
 
     @Override
     public void close() {
-        GuiBase.openGui(this.getParent());
+        Screen parent = this.getParent();
+        // ⚠️ 断开"父界面把本编辑器当 parent"的回指：否则 ESC 在 配置 ↔ 编辑器 之间来回弹
+        //    （2026-11-04 实测：ESC 退出后又被弹回编辑器，循环）
+        if (parent instanceof GuiBase guiBase && guiBase.getParent() instanceof GuiRenderEditor) {
+            guiBase.setParent(null);
+        }
+        GuiBase.openGui(parent);
     }
 
     @Override
