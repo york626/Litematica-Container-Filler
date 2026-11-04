@@ -57,6 +57,9 @@ public class GuiRenderEditor extends GuiBase {
     private long cachedHighlightPreviewKey = Long.MIN_VALUE;
     private List<PreviewDrawCommand> cachedHighlightPreviewCommands = List.of();
     private final List<ColorInputBinding> colorInputs = new ArrayList<>();
+    /** 控件分页（上游 issue #83）：控件太多时分页显示，避免挤成一团。 */
+    private int page = 0;
+    private int pageCount = 1;
 
     public GuiRenderEditor(Screen parent) {
         this.parent = parent;
@@ -93,9 +96,25 @@ public class GuiRenderEditor extends GuiBase {
     private void addTabControls() {
         List<ControlSpec> controls = getControlsForTab();
         ControlLayout layout = getControlLayout(controls.size());
-        for (int i = 0; i < controls.size(); i++) {
-            ControlRect rect = layout.rectFor(i);
-            controls.get(i).addButtons.accept(rect);
+        int capacity = layout.capacity();
+        this.pageCount = Math.max(1, (int)Math.ceil(controls.size() / (double)capacity));
+        if (this.page > this.pageCount - 1) this.page = this.pageCount - 1;
+        if (this.page < 0) this.page = 0;
+
+        int from = this.page * capacity;
+        int to = Math.min(controls.size(), from + capacity);
+        for (int i = from; i < to; i++) {
+            controls.get(i).addButtons.accept(layout.rectFor(i - from));
+        }
+
+        if (this.pageCount > 1) {
+            EditorLayout editor = getEditorLayout();
+            int y = editor.controlsPanel.y + 8;
+            int x = editor.controlsPanel.x + editor.controlsPanel.width - 44;
+            this.addButton(new ButtonGeneric(x, y, 18, 18, "<"),
+                    (button, mouseButton) -> { if (this.page > 0) { this.page--; this.initGui(); } });
+            this.addButton(new ButtonGeneric(x + 20, y, 18, 18, ">"),
+                    (button, mouseButton) -> { if (this.page < this.pageCount - 1) { this.page++; this.initGui(); } });
         }
     }
 
@@ -495,6 +514,7 @@ public class GuiRenderEditor extends GuiBase {
             if (isPointInside(mouseX, mouseY, x, y, 86, 20)) {
                 if (value != this.tab) {
                     this.tab = value;
+                    this.page = 0;
                     this.initGui();
                 }
                 return true;
@@ -616,8 +636,18 @@ public class GuiRenderEditor extends GuiBase {
     private void drawTabControlsOverlay(DrawContext context, int mouseX, int mouseY) {
         List<ControlSpec> controls = getControlsForTab();
         ControlLayout layout = getControlLayout(controls.size());
-        for (int i = 0; i < controls.size(); i++) {
-            ControlRect rect = layout.rectFor(i);
+        int capacity = layout.capacity();
+        int from = Math.min(this.page * capacity, Math.max(0, controls.size() - 1));
+        int to = Math.min(controls.size(), from + capacity);
+        if (this.pageCount > 1) {
+            EditorLayout editor = getEditorLayout();
+            String pageText = (this.page + 1) + "/" + this.pageCount;
+            drawString(context, pageText,
+                    editor.controlsPanel.x + editor.controlsPanel.width - 74,
+                    editor.controlsPanel.y + 13, MUTED);
+        }
+        for (int i = from; i < to; i++) {
+            ControlRect rect = layout.rectFor(i - from);
             ControlSpec control = controls.get(i);
             if (control.kind == ControlKind.STEPPER) {
                 drawStepperOverlay(context, mouseX, mouseY, rect.x, rect.y, rect.width, control.label.get());
@@ -729,7 +759,7 @@ public class GuiRenderEditor extends GuiBase {
             rows = Math.max(1, (int)Math.ceil(controlCount / (double)columns));
             width = Math.max(104, (availableW - gap * (columns - 1)) / columns);
         }
-        return new ControlLayout(startX, startY, width, rowH, rows, gap);
+        return new ControlLayout(startX, startY, width, rowH, rows, gap, columns);
     }
 
     private ColorControlLayout getColorControlLayout(int x, int y, int width) {
@@ -1737,7 +1767,11 @@ public class GuiRenderEditor extends GuiBase {
     private record ControlRect(int x, int y, int width) {
     }
 
-    private record ControlLayout(int x, int y, int width, int rowHeight, int rows, int gap) {
+    private record ControlLayout(int x, int y, int width, int rowHeight, int rows, int gap, int columns) {
+        int capacity() {
+            return Math.max(1, this.rows * this.columns);
+        }
+
         ControlRect rectFor(int index) {
             int column = index / this.rows;
             int row = index % this.rows;
