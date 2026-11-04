@@ -64,6 +64,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean ENABLE_SBP_EXTRACTION         = new ConfigBoolean("litematica_container_filler.config.name.enableSbpExtraction", true, "litematica_container_filler.config.comment.enableSbpExtraction");
     /** 材料列表把「精妙背包里的潜影盒/收纳袋内容」也算进"已有"（上游精妙核心只数背包每格、不展开原版容器）。 */
     public static final ConfigBoolean ENABLE_SBP_SHULKER_COUNT      = new ConfigBoolean("litematica_container_filler.config.name.enableSbpShulkerCount", true, "litematica_container_filler.config.comment.enableSbpShulkerCount");
+    /** 匹配材料时忽略"自定义名称/描述"这类纯装饰组件（改过名的物品也能填充）。 */
+    public static final ConfigBoolean MATCH_IGNORE_CUSTOM_NAME     = new ConfigBoolean("litematica_container_filler.config.name.matchIgnoreCustomName", false, "litematica_container_filler.config.comment.matchIgnoreCustomName");
     public static final ConfigOptionList QUICK_SHULKER_OPEN_MODE    = new ConfigOptionList("litematica_container_filler.config.name.quickShulkerOpenMode", QuickShulkerOpenMode.INVOKE, "litematica_container_filler.config.comment.quickShulkerOpenMode");
     public static final ConfigBoolean MATCH_SHULKER_BOXES_BY_CONTENT = new ConfigBoolean("litematica_container_filler.config.name.matchShulkerBoxesByContent", false, "litematica_container_filler.config.comment.matchShulkerBoxesByContent");
     // Keep this legacy field public for TakeItOut's optional compatibility mixin.
@@ -180,6 +182,7 @@ public class Configs implements IConfigHandler {
                 ENABLE_QS_EXTRACTION,
                 ENABLE_SBP_EXTRACTION,
                 ENABLE_SBP_SHULKER_COUNT,
+                MATCH_IGNORE_CUSTOM_NAME,
                 QUICK_SHULKER_OPEN_MODE,
                 MATCH_SHULKER_BOXES_BY_CONTENT,
                 STORE_ORDERLY,

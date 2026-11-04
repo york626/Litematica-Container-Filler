@@ -16,14 +16,32 @@ public class ItemMatcher {
     public static boolean isSameItem(ItemStack current, ItemStack required) {
         if (current.isEmpty() || required.isEmpty()) return false;
         if (ItemStack.areItemsAndComponentsEqual(current, required)) return true;
+        // 忽略"自定义名称/描述"这类纯装饰组件：改了名的物品也当成同一种材料（默认关）
+        if (Configs.MATCH_IGNORE_CUSTOM_NAME.getBooleanValue()
+                && current.isOf(required.getItem())
+                && ItemStack.areItemsAndComponentsEqual(stripCosmetic(current), stripCosmetic(required))) {
+            return true;
+        }
         return Configs.MATCH_SHULKER_BOXES_BY_CONTENT.getBooleanValue()
                 && isShulkerBox(current)
                 && isShulkerBox(required)
                 && hasSameContainerContents(current, required);
     }
 
+    /** 去掉纯装饰组件（自定义名称 / 描述 / 物品名）后的副本，用于"忽略改名"匹配。 */
+    private static ItemStack stripCosmetic(ItemStack stack) {
+        ItemStack copy = stack.copyWithCount(1);
+        copy.remove(DataComponentTypes.CUSTOM_NAME);
+        copy.remove(DataComponentTypes.LORE);
+        copy.remove(DataComponentTypes.ITEM_NAME);
+        return copy;
+    }
+
     public static int matchingHash(ItemStack stack) {
         if (stack.isEmpty()) return 0;
+        if (Configs.MATCH_IGNORE_CUSTOM_NAME.getBooleanValue()) {
+            return stripCosmetic(stack).hashCode();
+        }
         if (Configs.MATCH_SHULKER_BOXES_BY_CONTENT.getBooleanValue() && isShulkerBox(stack)) {
             int hash = ShulkerBoxBlock.class.hashCode();
             for (ItemStack inner : getContainerSlots(stack)) {

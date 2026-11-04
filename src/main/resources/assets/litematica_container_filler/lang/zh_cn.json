@@ -400,5 +400,7 @@
   "litematica_container_filler.config.name.enableSbpExtraction": "快捷精妙背包提取",
   "litematica_container_filler.config.comment.enableSbpExtraction": "缺料时从精妙背包（Sophisticated Backpacks）取出所需材料，并自动继续填充（只需按一次填充键）。需要安装精妙背包。",
   "litematica_container_filler.config.name.enableSbpShulkerCount": "材料列表计入背包内潜影盒",
-  "litematica_container_filler.config.comment.enableSbpShulkerCount": "材料列表/HUD 的「已有数量」会把精妙背包里潜影盒（与收纳袋）的内容也算进去。上游精妙核心只统计背包每一格、不展开里面的原版容器；本开关补这一层。"
+  "litematica_container_filler.config.comment.enableSbpShulkerCount": "材料列表/HUD 的「已有数量」会把精妙背包里潜影盒（与收纳袋）的内容也算进去。上游精妙核心只统计背包每一格、不展开里面的原版容器；本开关补这一层。",
+  "litematica_container_filler.config.name.matchIgnoreCustomName": "忽略自定义名称匹配",
+  "litematica_container_filler.config.comment.matchIgnoreCustomName": "匹配材料时忽略「自定义名称/描述」这类纯装饰组件：改过名的物品也能和普通物品互相匹配（上游 issue #2）。默认关，避免误匹配。"
 }

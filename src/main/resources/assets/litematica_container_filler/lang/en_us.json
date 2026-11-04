@@ -398,5 +398,7 @@
   "litematica_container_filler.config.name.enableSbpExtraction": "Quick SBP extraction",
   "litematica_container_filler.config.comment.enableSbpExtraction": "When materials are missing, pull them out of a worn Sophisticated Backpack and continue filling automatically.",
   "litematica_container_filler.config.name.enableSbpShulkerCount": "Count shulkers inside backpacks",
-  "litematica_container_filler.config.comment.enableSbpShulkerCount": "Include contents of shulker boxes (and bundles) stored inside Sophisticated Backpacks in the material list's available count."
+  "litematica_container_filler.config.comment.enableSbpShulkerCount": "Include contents of shulker boxes (and bundles) stored inside Sophisticated Backpacks in the material list's available count.",
+  "litematica_container_filler.config.name.matchIgnoreCustomName": "Ignore custom name when matching",
+  "litematica_container_filler.config.comment.matchIgnoreCustomName": "Ignore cosmetic components (custom name / lore / item name) when matching materials, so renamed items match plain ones. Off by default."
 }

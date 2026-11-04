@@ -57,6 +57,9 @@ public class GuiRenderEditor extends GuiBase {
     private long cachedHighlightPreviewKey = Long.MIN_VALUE;
     private List<PreviewDrawCommand> cachedHighlightPreviewCommands = List.of();
     private final List<ColorInputBinding> colorInputs = new ArrayList<>();
+    /** 控制区滚轮偏移（Ray 2026-11-04：渲染编辑器控件太多，加滚轮；上游 issue #83）。 */
+    private int scrollOffset = 0;
+    private int maxScroll = 0;
 
     public GuiRenderEditor(Screen parent) {
         this.parent = parent;
@@ -378,6 +381,23 @@ public class GuiRenderEditor extends GuiBase {
     }
 
     @Override
+    public boolean onMouseScrolled(int mouseX, int mouseY, double amountX, double amountY) {
+        EditorLayout layout = getEditorLayout();
+        boolean overControls = mouseX >= layout.controlsPanel.x && mouseX < layout.controlsPanel.x + layout.controlsPanel.width
+                && mouseY >= layout.controlsPanel.y && mouseY < layout.controlsPanel.y + layout.controlsPanel.height;
+        if (!overControls) {
+            return super.onMouseScrolled(mouseX, mouseY, amountX, amountY);
+        }
+        if (this.maxScroll <= 0) {
+            return true;
+        }
+        int step = Math.max(12, (int)Math.round(-amountY * 24.0D));
+        this.scrollOffset = Math.max(0, Math.min(this.maxScroll, this.scrollOffset + step));
+        this.initGui();
+        return true;
+    }
+
+    @Override
     public boolean onMouseReleased(int mouseX, int mouseY, int mouseButton) {
         if (this.draggingPreview || this.draggingHudPosition) {
             this.draggingPreview = false;
@@ -402,10 +422,19 @@ public class GuiRenderEditor extends GuiBase {
         drawSectionHeader(drawContext, tr("litematica_container_filler.gui.label.render_editor_settings"), layout.controlsPanel.x + 16, layout.controlsPanel.y + 12);
         drawTabDescription(drawContext, layout.controlsPanel.x + 16, layout.controlsPanel.y + 31, layout.controlsPanel.width - 32);
         drawPreview(drawContext, layout.preview.x, layout.preview.y, layout.preview.width, layout.preview.height, partialTicks);
+
+        // 控件区滚动：只在控制面板内部绘制（避免滚上去的控件盖住标题/页签）
+        int clipX = layout.controlsPanel.x + 6;
+        int clipTop = layout.controlsPanel.y + 50;
+        int clipRight = layout.controlsPanel.x + layout.controlsPanel.width - 6;
+        int clipBottom = layout.controlsPanel.y + layout.controlsPanel.height - 6;
+        drawContext.enableScissor(clipX, clipTop, clipRight, clipBottom);
         super.drawContents(drawContext, mouseX, mouseY, partialTicks);
+        drawTabControlsOverlay(drawContext, mouseX, mouseY);
+        drawContext.disableScissor();
+
         drawTabButtonOverlay(drawContext, mouseX, mouseY);
         drawBackButtonOverlay(drawContext, mouseX, mouseY);
-        drawTabControlsOverlay(drawContext, mouseX, mouseY);
     }
 
     private void drawTabDescription(DrawContext context, int x, int y, int width) {
@@ -718,16 +747,15 @@ public class GuiRenderEditor extends GuiBase {
         int gap = availableW < 360 ? 6 : 8;
         int minControlW = availableW < 360 ? 104 : 132;
         int maxColumns = Math.max(1, (availableW + gap) / (minControlW + gap));
-        int columns = Math.max(1, (int)Math.ceil(controlCount / (double)rows));
-        columns = Math.min(columns, maxColumns);
+        // 列数只由宽度决定；内容超高就滚轮滚动（不再为了塞下而无限加列 —— 上游 issue #83）
+        int columns = Math.max(1, Math.min(maxColumns, controlCount));
         rows = Math.max(1, (int)Math.ceil(controlCount / (double)columns));
         int width = Math.max(112, (availableW - gap * (columns - 1)) / columns);
-        if (rows * rowH > availableH && columns < Math.max(1, (availableW + gap) / (104 + gap))) {
-            columns++;
-            rows = Math.max(1, (int)Math.ceil(controlCount / (double)columns));
-            width = Math.max(104, (availableW - gap * (columns - 1)) / columns);
-        }
-        return new ControlLayout(startX, startY, width, rowH, rows, gap);
+        int contentH = rows * rowH;
+        this.maxScroll = Math.max(0, contentH - availableH);
+        if (this.scrollOffset > this.maxScroll) this.scrollOffset = this.maxScroll;
+        if (this.scrollOffset < 0) this.scrollOffset = 0;
+        return new ControlLayout(startX, startY - this.scrollOffset, width, rowH, rows, gap);
     }
 
     private ColorControlLayout getColorControlLayout(int x, int y, int width) {
