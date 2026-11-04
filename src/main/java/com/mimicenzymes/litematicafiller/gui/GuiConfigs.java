@@ -39,6 +39,9 @@ public class GuiConfigs extends GuiConfigsBase {
         // 标题栏带版本号（Ray 2026-11-03 要求，便于确认跑的是哪一版）
         this.title = fi.dy.masa.malilib.util.StringUtils.translate(
                 "litematica_container_filler.gui.title.configs") + " v" + Reference.MOD_VERSION;
+        // ⚠️ 关掉"父界面标题拼接"：GuiBase.getTitleString() 会沿 parent 链递归，
+        //    一旦两个界面互相把对方当 parent 就 StackOverflow（2026-11-04 实测崩过）。
+        this.useTitleHierarchy = false;
     }
 
     public GuiConfigs() {

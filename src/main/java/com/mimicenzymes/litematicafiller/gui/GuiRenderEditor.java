@@ -65,6 +65,8 @@ public class GuiRenderEditor extends GuiBase {
         this.parent = parent;
         this.setParent(parent);
         this.title = tr("litematica_container_filler.gui.title.render_editor");
+        // 同 GuiConfigs：避免 parent 链成环时 getTitleString 无限递归
+        this.useTitleHierarchy = false;
     }
 
     @Override
