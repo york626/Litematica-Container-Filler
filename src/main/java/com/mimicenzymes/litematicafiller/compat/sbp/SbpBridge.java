@@ -37,6 +37,8 @@ public final class SbpBridge {
 
     /** 每个容器最近一次的填充请求（用于自动重提交）。 */
     private static final Map<String, PendingTask> pendingTasks = new HashMap<>();
+    /** 我们自己塞进精妙背包的物品（填充腾位用）⇒ 等背包有空间自动取回，不让物品"凭空消失"。 */
+    private static final Map<Item, Integer> stashedForReturn = new HashMap<>();
 
     private static final class PendingTask {
         final BlockPos pos;
@@ -214,6 +216,8 @@ public final class SbpBridge {
             return false;
         }
         rememberTask(pos, required, true);
+        stashedForReturn.merge(bestItem, bestCount, Integer::sum);
+        toast("§e[背包] 背包已满：先把 " + bestItem.getName().getString() + " x" + bestCount + " 暂存进精妙背包，填充结束后自动取回");
         SbpPayloads.sendStore(Registries.ITEM.getId(bestItem), bestCount);
         LOGGER.info("[sbp] 背包满 ⇒ 请求把 {} x{} 存回精妙背包腾位", Registries.ITEM.getId(bestItem), bestCount);
         return true;
@@ -233,6 +237,7 @@ public final class SbpBridge {
      * （2026-11-03 实测：这就是"要按两次"的原因之一）。所以这里按 tick 重试，最多等 2 秒。
      */
     public static void tick() {
+        tickReturnStash();
         if (pendingTasks.isEmpty()) {
             return;
         }
@@ -265,6 +270,41 @@ public final class SbpBridge {
                 LOGGER.warn("[sbp] 重提交填充任务失败 {}", task.pos, error);
             }
             pendingTasks.remove(task.pos.toShortString());
+        }
+    }
+
+    private static long lastReturnAttempt = 0L;
+
+    /** 有空间时，把之前"暂存进背包"的物品取回来（每 500ms 最多试一件）。 */
+    private static void tickReturnStash() {
+        if (stashedForReturn.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastReturnAttempt < 500L) {
+            return;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null || !SbpPayloads.canSend()) {
+            return;
+        }
+        int freeSlots = 0;
+        for (int slot = 0; slot < Math.min(36, client.player.getInventory().size()); slot++) {
+            if (client.player.getInventory().getStack(slot).isEmpty()) {
+                freeSlots++;
+            }
+        }
+        if (freeSlots < 2) {
+            return; // 还很挤，等填充把东西消耗掉
+        }
+        java.util.Iterator<Map.Entry<Item, Integer>> it = stashedForReturn.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Item, Integer> entry = it.next();
+            lastReturnAttempt = now;
+            SbpPayloads.sendExtract(Registries.ITEM.getId(entry.getKey()), entry.getValue());
+            LOGGER.info("[sbp] 取回暂存物品 {} x{}", Registries.ITEM.getId(entry.getKey()), entry.getValue());
+            it.remove();
+            break;
         }
     }
 

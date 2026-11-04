@@ -123,6 +123,8 @@ public class AutoFillerStateMachine {
     /** 「归还」独立于任务生命周期：任务被打断/重提交也不会把东西忘在盒子里（2026-11-04）。 */
     private boolean returnPending = false;
     private final java.util.Deque<Integer> pendingReturnSlots = new java.util.ArrayDeque<>();
+    /** 归还重试计数：盒子找不到/开不起来时别无限重开（会表现为反复"容器响应超时"）。 */
+    private int returnAttempts = 0;
     private final Map<StrictItemStackKey, OrderlyStoredItem> orderlyStoredItems = new HashMap<>();
 
     private final Set<Integer> openedShulkerSlots = new LinkedHashSet<>();
@@ -2350,6 +2352,10 @@ public class AutoFillerStateMachine {
                     int uiSlot = getPlayerInventoryMenuSlot(client.player.playerScreenHandler, client, activeShulkerSlot);
                     restoreCursorShulkerIfClickWasVanilla(client, client.player.playerScreenHandler.syncId, uiSlot);
                 }
+                if (returnPending) {
+                    // 归还环节开盒失败：放弃本轮归还，避免"每次按填充都超时"
+                    finishPendingReturn(client, false);
+                }
                 abortTask(client, "litematica_container_filler.message.container_timeout", false, false);
                 return;
             }
@@ -2400,16 +2406,26 @@ public class AutoFillerStateMachine {
         if (client.player.currentScreenHandler != client.player.playerScreenHandler) {
             return; // 等当前界面关掉
         }
-        if (pendingReturnSlots.isEmpty()) {
+        if (pendingReturnSlots.isEmpty() || returnAttempts >= 4) {
             finishPendingReturn(client, false);
             return;
         }
+        int slot = pendingReturnSlots.poll();
+        ItemStack candidate = client.player.getInventory().getStack(slot);
+        if (!isShulkerBox(candidate)) {
+            // 这个槽位已经不是潜影盒了（被挪走/换成别的东西）⇒ 别去开它，直接跳过
+            stashedByShulker.remove(slot);
+            returnAttempts++;
+            return;
+        }
+        returnAttempts++;
         changePhase(Phase.RETURNING);
-        openShulkerBox(client, pendingReturnSlots.poll());
+        openShulkerBox(client, slot);
     }
 
     private void finishPendingReturn(MinecraftClient client, boolean allReturned) {
         returnPending = false;
+        returnAttempts = 0;
         pendingReturnSlots.clear();
         stashedByShulker.clear();
         stashedItemCounts.clear();
