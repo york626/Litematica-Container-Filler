@@ -16,6 +16,7 @@ import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.util.StringUtils;
 import fi.dy.masa.malilib.util.Color4f;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import org.lwjgl.glfw.GLFW;
 
@@ -76,18 +77,28 @@ public class GuiRenderEditor extends GuiBase {
 
     @Override
     public boolean shouldCloseOnEsc() {
-        return true;
+        // ESC 由下面的 keyPressed 统一处理（走原版 close 会和 malilib 的返回逻辑打架，
+        // 表现为"退出后又被弹回编辑器"，2026-11-04 实测）
+        return false;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256) { // ESC
+            this.close();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public void close() {
         Screen parent = this.getParent();
-        // ⚠️ 断开"父界面把本编辑器当 parent"的回指：否则 ESC 在 配置 ↔ 编辑器 之间来回弹
-        //    （2026-11-04 实测：ESC 退出后又被弹回编辑器，循环）
+        // ⚠️ 断开"父界面把本编辑器当 parent"的回指：否则 ESC 会在这两屏之间来回弹
         if (parent instanceof GuiBase guiBase && guiBase.getParent() instanceof GuiRenderEditor) {
             guiBase.setParent(null);
         }
-        GuiBase.openGui(parent);
+        MinecraftClient.getInstance().setScreen(parent);
     }
 
     @Override
