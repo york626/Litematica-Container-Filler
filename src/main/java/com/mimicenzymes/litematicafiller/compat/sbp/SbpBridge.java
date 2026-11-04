@@ -325,6 +325,14 @@ public final class SbpBridge {
         if (client.player == null || client.world == null || !SbpPayloads.canSend()) {
             return;
         }
+        // ⚠️ 填充进行中 / 有容器界面打开时不要动背包：
+        //    否则服务端搬物品会让填充机的槽位映射错乱，表现为"鼠标卡住"（2026-11-05 Ray 实测）
+        if (AutoFillerStateMachine.getInstance().isWorking()) {
+            return;
+        }
+        if (client.currentScreen != null) {
+            return;
+        }
         // 按"这件物品能不能放下"判断（有空格 或 有同类未满堆），而不是死要 2 个空格
         // （2026-11-04 Ray 实测：只剩 1 格时空桶永远取不回）
         java.util.Iterator<Map.Entry<Item, Integer>> it = stashedForReturn.entrySet().iterator();
