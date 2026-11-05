@@ -6,7 +6,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.block.ShulkerBoxBlock;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.ContainerComponent;
+import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -30,6 +34,10 @@ public final class SbpBridge {
 
     private static final int RETRY_TICKS = 40;
     private static final int NO_STOCK_TICKS = 200;
+    /** 取货成功 → 材料在客户端可见的上限。散装几乎立刻到；盒装要等服务端的槽位同步。 */
+    private static final long SYNC_TIMEOUT_MS = 6000L;
+    /** 不知道缺的是哪几种（请求来自 prefetch，还没走过缺料判定）时只等一两拍，不久等。 */
+    private static final long UNKNOWN_SYNC_GRACE_MS = 500L;
 
     private static final Set<Item> waiting = new HashSet<>();
     /** waiting 的起始 tick（自愈用：回包丢了不能永久卡住这个物品）。 */
@@ -260,9 +268,18 @@ public final class SbpBridge {
             if (task.armedAt == 0L) {
                 continue;                       // 还没取到货
             }
-            boolean ready = task.missing == null || task.missing.isEmpty() || allInInventory(task.missing);
-            if (!ready && now - task.armedAt < 2000L) {
-                continue;                       // 等背包同步
+            // ★ v1.8.2：就绪判据改成「材料在客户端真的看得见」（含背包里潜影盒的内容），
+            //   并且等不到就**不再硬提交** —— 硬提交会把"还没同步"误报成「目标材料耗尽」。
+            long waited = now - task.armedAt;
+            Set<Item> missing = task.missing;
+            boolean known = missing != null && !missing.isEmpty();
+            if (known ? !reachable(missing) : waited < UNKNOWN_SYNC_GRACE_MS) {
+                if (known && waited >= SYNC_TIMEOUT_MS) {
+                    pendingTasks.remove(task.pos.toShortString());
+                    LOGGER.info("[sbp] 等了 {} ms 仍看不到材料 {} ⇒ 放弃本次自动重提交（请再按一次填充）", waited, missing);
+                    toast("§e[背包] 材料还没同步到背包，请再按一次填充键");
+                }
+                continue;
             }
             if (machine == null) {
                 machine = AutoFillerStateMachine.getInstance();
@@ -382,7 +399,14 @@ public final class SbpBridge {
         }
     }
 
-    private static boolean allInInventory(Set<Item> types) {
+    /**
+     * 这些物品是否已经**在客户端可见**（散装，或装在玩家背包里的潜影盒内）。
+     *
+     * <p>★ v1.8.2：旧版只数散装（`allInInventory`）⇒ 服务端把「整盒」搬过来时永远判不可见，
+     * 超时后还会无条件重提交 ⇒ 盒子还没同步到客户端，重提交的任务当场判缺料、
+     * 报「目标材料耗尽」（Ray 2026-11-05 实测：搬出一盒、填一次，再填就报错）。</p>
+     */
+    private static boolean reachable(Set<Item> types) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) {
             return false;
@@ -390,8 +414,22 @@ public final class SbpBridge {
         Set<Item> found = new HashSet<>();
         for (int slot = 0; slot < Math.min(36, client.player.getInventory().size()); slot++) {
             ItemStack stack = client.player.getInventory().getStack(slot);
-            if (!stack.isEmpty() && types.contains(stack.getItem())) {
+            if (stack.isEmpty()) {
+                continue;
+            }
+            if (types.contains(stack.getItem())) {
                 found.add(stack.getItem());
+            }
+            if (stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() instanceof ShulkerBoxBlock) {
+                ContainerComponent container = stack.get(DataComponentTypes.CONTAINER);
+                if (container == null) {
+                    continue;
+                }
+                for (ItemStack inner : container.stream().toList()) {
+                    if (!inner.isEmpty() && types.contains(inner.getItem())) {
+                        found.add(inner.getItem());
+                    }
+                }
             }
         }
         return found.containsAll(types);
