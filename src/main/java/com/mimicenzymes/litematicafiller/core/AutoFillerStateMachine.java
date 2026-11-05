@@ -86,6 +86,8 @@ public class AutoFillerStateMachine {
 
     private static final AutoFillerStateMachine INSTANCE = new AutoFillerStateMachine();
     public static AutoFillerStateMachine getInstance() { return INSTANCE; }
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
     private static final int MAX_TASK_QUEUE_SIZE = 20;
     private static final int MAX_ACTIONS_PER_TICK = 24;
     private static final int MAX_QUEUE_PREPARES_PER_TICK = 4;
@@ -1137,6 +1139,20 @@ public class AutoFillerStateMachine {
                 if (hasAnyMaterialsToFill(client)) {
                     currentTask.initLedger();
                     changePhase(Phase.FILLING);
+                    return;
+                }
+                // ★ v1.8.4：补给还在路上就**不许判"材料耗尽"**。
+                //   精妙背包取货是异步的（回包先到、背包同步后到），旧代码在这里直接 abort 弹红字，
+                //   而材料往往一两拍后才进背包 —— Ray 2026-11-05 反复撞上的就是这个红字。
+                Set<net.minecraft.item.Item> neededTypes = new LinkedHashSet<>();
+                for (ItemStack stack : needed) {
+                    if (!stack.isEmpty()) neededTypes.add(stack.getItem());
+                }
+                if (com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.isFetching(neededTypes)
+                        || com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.hasPending(currentTask.targetPos)) {
+                    LOGGER.info("[fill] 材料 {} 正在从精妙背包取货，容器 {} 暂不判定耗尽，等回包后重试",
+                            neededTypes, currentTask.targetPos);
+                    reset();
                     return;
                 }
                 abortTask(client, "litematica_container_filler.message.materials_depleted", false, false);

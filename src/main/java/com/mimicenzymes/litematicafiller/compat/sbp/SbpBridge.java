@@ -32,8 +32,12 @@ public final class SbpBridge {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("litematica_container_filler");
 
-    private static final int RETRY_TICKS = 40;
+    private static final int RETRY_TICKS = 10;
     private static final int NO_STOCK_TICKS = 200;
+    /** 同一个容器的两次自动重提交最小间隔（补给泵要反复提交，太密会空转）。 */
+    private static final long RESUBMIT_INTERVAL_MS = 500L;
+    /** pending 条目最长保留（超时就不再自动重提交这个容器）。 */
+    private static final long PENDING_TTL_MS = 30000L;
     /** 取货成功 → 材料在客户端可见的上限。散装几乎立刻到；盒装要等服务端的槽位同步。 */
     private static final long SYNC_TIMEOUT_MS = 6000L;
     /** 不知道缺的是哪几种（请求来自 prefetch，还没走过缺料判定）时只等一两拍，不久等。 */
@@ -57,9 +61,11 @@ public final class SbpBridge {
         final Map<Integer, ItemStack> required;
         final boolean manual;
         Set<Item> missing;
-        final long storedAt = System.currentTimeMillis();
+        long storedAt = System.currentTimeMillis();
         /** >0 表示"取货成功、等待背包同步后重提交"。 */
         long armedAt = 0L;
+        /** 上次自动重提交的时刻（节流用：补给泵要反复提交同一个容器）。 */
+        long lastSubmitAt = 0L;
 
         PendingTask(BlockPos pos, Map<Integer, ItemStack> required, boolean manual, Set<Item> missing) {
             this.pos = pos;
@@ -81,8 +87,16 @@ public final class SbpBridge {
         String key = pos.toShortString();
         PendingTask old = pendingTasks.get(key);
         Set<Item> missing = old != null ? old.missing : new HashSet<>();
-        pendingTasks.put(key, new PendingTask(pos.toImmutable(), new HashMap<>(required), manual, missing));
-        while (pendingTasks.size() > 16) {
+        PendingTask task = new PendingTask(pos.toImmutable(), new HashMap<>(required), manual, missing);
+        if (old != null) {
+            // ★ v1.8.4：重复 rememberTask 不能把"已装载 / 上次提交时间 / 建档时间"清掉 ——
+            //   否则补给泵每提交一次就重新计时，条目永不超时、状态也全丢。
+            task.armedAt = old.armedAt;
+            task.lastSubmitAt = old.lastSubmitAt;
+            task.storedAt = old.storedAt;
+        }
+        pendingTasks.put(key, task);
+        while (pendingTasks.size() > 32) {
             String oldest = pendingTasks.keySet().iterator().next();
             pendingTasks.remove(oldest);
         }
@@ -216,6 +230,11 @@ public final class SbpBridge {
      * 只有 1，于是一排容器每填一个都要往返一次，慢到爆；而且中间那些容器全被判缺料。</p>
      */
     private static int wantedAmount(Item item) {
+        return Math.max(1, queuedNeed(item) - looseCount(item));
+    }
+
+    /** 所有排队容器对该物品的需求合计（含容器里已经有的那部分，宁多勿少，多余的就留在背包）。 */
+    private static int queuedNeed(Item item) {
         int need = 0;
         for (PendingTask task : pendingTasks.values()) {
             for (ItemStack req : task.required.values()) {
@@ -224,7 +243,7 @@ public final class SbpBridge {
                 }
             }
         }
-        return Math.max(1, need - looseCount(item));
+        return need;
     }
 
     /** 玩家 36 格里的散装数量（潜影盒内的不算：那些要开盒才能用，仍算"缺"）。 */
@@ -285,6 +304,13 @@ public final class SbpBridge {
                 task.armedAt = armAt;
             }
         }
+        // ★ v1.8.4 补给泵：一次只搬得动 N 个（工具类最大堆叠=1，且玩家背包可能只剩 1 格），
+        //   排队容器还没喂饱就把差额继续压在 demand 里 ⇒ 冷却后自动再要一批，
+        //   而不是等填充机下一次"判缺料"（那一步会把它记成 failedContainers，再没人重试）。
+        int remaining = queuedNeed(item) - looseCount(item);
+        if (remaining > 0) {
+            demand.merge(item, remaining, Math::max);
+        }
     }
 
     /**
@@ -339,7 +365,12 @@ public final class SbpBridge {
      * 每客户端 tick 调：把"已取到货"的任务在背包同步完成后重新提交。
      *
      * <p>⚠️ 不能只在回包里立刻重提交：回包先到、客户端背包同步后到，立刻提交仍会被判缺料
-     * （2026-11-03 实测：这就是"要按两次"的原因之一）。所以这里按 tick 重试，最多等 2 秒。
+     * （2026-11-03 实测：这就是"要按两次"的原因之一）。所以这里按 tick 重试。</p>
+     *
+     * <p>★ v1.8.4：改成**持续驱动的补给泵** —— 旧版每个容器只重提交一次就把条目删掉，
+     * 于是一排容器 + 玩家背包只剩 1 格（工具类最大堆叠=1，一次只能搬 1 个）时，
+     * 第二、第三个容器再也没有人重试，只能靠玩家再按一次（Ray 2026-11-05 第三次实测）。
+     * 现在条目保留到 30 s、每 500 ms 最多重提交一次，直到容器被填掉。</p>
      */
     public static void tick() {
         expireStaleWaiting();
@@ -351,12 +382,16 @@ public final class SbpBridge {
         long now = System.currentTimeMillis();
         AutoFillerStateMachine machine = null;
         for (PendingTask task : new java.util.ArrayList<>(pendingTasks.values())) {
-            if (now - task.storedAt > 30_000L) {
+            if (now - task.storedAt > PENDING_TTL_MS) {
                 pendingTasks.remove(task.pos.toShortString());
+                LOGGER.info("[sbp] 容器 {} 等补给超过 {} s ⇒ 停止自动重提交", task.pos, PENDING_TTL_MS / 1000);
                 continue;
             }
             if (task.armedAt == 0L) {
                 continue;                       // 还没取到货
+            }
+            if (now - task.lastSubmitAt < RESUBMIT_INTERVAL_MS) {
+                continue;                       // 节流
             }
             // ★ v1.8.2：就绪判据改成「材料在客户端真的看得见」（含背包里潜影盒的内容），
             //   并且等不到就**不再硬提交** —— 硬提交会把"还没同步"误报成「目标材料耗尽」。
@@ -374,6 +409,7 @@ public final class SbpBridge {
             if (machine == null) {
                 machine = AutoFillerStateMachine.getInstance();
             }
+            task.lastSubmitAt = now;
             try {
                 machine.clearFailedContainer(task.pos);
                 if (task.manual) {
@@ -385,7 +421,6 @@ public final class SbpBridge {
             } catch (Throwable error) {
                 LOGGER.warn("[sbp] 重提交填充任务失败 {}", task.pos, error);
             }
-            pendingTasks.remove(task.pos.toShortString());
         }
     }
 
