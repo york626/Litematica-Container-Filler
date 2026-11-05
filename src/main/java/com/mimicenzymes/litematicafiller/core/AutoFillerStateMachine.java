@@ -408,6 +408,53 @@ public class AutoFillerStateMachine {
         RealContainerCache.requestContainerData(pos);
     }
 
+    /**
+     * 按图纸看，这个容器**还需要填**吗？（给 SbpBridge 的补给泵用）
+     *
+     * <p>★ v1.8.5：1.8.4 的补给泵每 500ms 无脑重提交一次，于是**已经填好的容器**也会被
+     * 反复提交 ⇒ 每次都走 addTask 的「目标容器已满足条件 + reset()」分支：消息狂闪、
+     * 填充机一直占着那个容器，玩家右键打不开（Ray 2026-11-05 第四次实测）。
+     * ⇒ 重提交前先问这里，返回 false 就停止并丢掉 pending 条目。</p>
+     *
+     * <p>注意：容器数据没取到（trueData == null）时按"还需要"处理，宁可多等一轮。</p>
+     */
+    public boolean stillNeedsFill(BlockPos pos, Map<Integer, ItemStack> requiredItems) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (pos == null || requiredItems == null || client.world == null || client.player == null) {
+            return true;
+        }
+        if (ManualContainerOverrideManager.isCompleted(pos)) {
+            return false;
+        }
+        Map<Integer, ItemStack> trueData = getTrueContainerData(client, pos);
+        if (trueData == null) {
+            return true;
+        }
+        boolean isCrafter = client.world.getBlockState(pos).getBlock() instanceof net.minecraft.block.CrafterBlock;
+        Set<Integer> ignoredSlots = LitematicaContainerReader.getIgnoredSlots(pos, client.world.getRegistryManager());
+        for (int i = 0; i < 54; i++) {
+            if (ignoredSlots.contains(i)) {
+                continue;
+            }
+            ItemStack req = requiredItems.getOrDefault(i, ItemStack.EMPTY);
+            ItemStack cur = trueData.getOrDefault(i, ItemStack.EMPTY);
+            if (req.isEmpty() && cur.isEmpty()) {
+                continue;
+            }
+            if (req.isEmpty() != cur.isEmpty()) {
+                return true;
+            }
+            if (!ItemMatcher.isSameItem(req, cur)) {
+                return true;
+            }
+            if (cur.getCount() != req.getCount() && (cur.getCount() < req.getCount() || !isCrafter)) {
+                return true;
+            }
+        }
+        boolean crafterLocking = isCrafter && LitematicaContainerReader.doesCrafterNeedLocking(pos, client);
+        return crafterLocking || ManualContainerOverrideManager.isNeedsFill(pos);
+    }
+
     private Set<Item> getUnavailableMissingTypes(MinecraftClient client, BlockPos pos, Map<Integer, ItemStack> requiredItems, Map<Integer, ItemStack> knownMissingItems) {
         if (client == null || client.player == null || requiredItems == null || requiredItems.isEmpty()) return Collections.emptySet();
         if (isCreativeFillEnabled(client)) return Collections.emptySet();

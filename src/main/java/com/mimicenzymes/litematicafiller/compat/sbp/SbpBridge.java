@@ -380,6 +380,11 @@ public final class SbpBridge {
             return;
         }
         long now = System.currentTimeMillis();
+        // ★ v1.8.5：玩家自己开着界面（正在开箱子/看背包）时暂停重提交，
+        //   否则补给泵会一直抢容器 ⇒ 玩家右键刚打开就被模组接管/关掉。
+        if (MinecraftClient.getInstance().currentScreen != null) {
+            return;
+        }
         AutoFillerStateMachine machine = null;
         for (PendingTask task : new java.util.ArrayList<>(pendingTasks.values())) {
             if (now - task.storedAt > PENDING_TTL_MS) {
@@ -408,6 +413,13 @@ public final class SbpBridge {
             }
             if (machine == null) {
                 machine = AutoFillerStateMachine.getInstance();
+            }
+            // ★ v1.8.5：已经填好了就别再提交 —— 否则每 500ms 走一次「已满足条件 + reset()」，
+            //   消息狂闪、容器一直被占用，玩家右键都打不开。
+            if (!machine.stillNeedsFill(task.pos, task.required)) {
+                pendingTasks.remove(task.pos.toShortString());
+                LOGGER.info("[sbp] 容器 {} 已满足 ⇒ 停止补货重提交", task.pos);
+                continue;
             }
             task.lastSubmitAt = now;
             try {
