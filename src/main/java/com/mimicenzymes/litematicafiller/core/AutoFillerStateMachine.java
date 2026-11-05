@@ -605,8 +605,11 @@ public class AutoFillerStateMachine {
                         break;
                     }
                 }
-                // 精妙背包取货流程中就不要报"缺少材料"（材料正在从背包搬过来）
-                if (!com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.hasPending(currentTask.targetPos)) {
+                // 精妙背包取货流程中就不要报"缺少材料"（材料正在从背包搬过来）。
+                // ★ v1.8.3：判断口径从"这个容器有在途请求"放宽到"这些材料正在取货（在途或排队补发）"——
+                //   连续填充时后面那些容器本来就在等同一件材料，旧口径会把它们逐个大红字报一遍。
+                if (!com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.hasPending(currentTask.targetPos)
+                        && !com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.isFetching(trueMissingTypes)) {
                     sendFeedback(client, Text.translatable("litematica_container_filler.message.material_shortage", sb.toString()).getString(), true);
                 }
                 return false;

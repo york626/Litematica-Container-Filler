@@ -44,6 +44,8 @@ public final class SbpBridge {
     private static final Map<Item, Long> waitingSince = new HashMap<>();
     private static final Map<Item, Long> lastRequestTick = new HashMap<>();
     private static final Map<Item, Long> noStockUntil = new HashMap<>();
+    /** 被「在途 / 去重窗口 / 无货退避」挡下的取货需求（物品 → 最少要取几个），冷却后自动补发。 */
+    private static final Map<Item, Integer> demand = new HashMap<>();
 
     /** 每个容器最近一次的填充请求（用于自动重提交）。 */
     private static final Map<String, PendingTask> pendingTasks = new HashMap<>();
@@ -137,13 +139,25 @@ public final class SbpBridge {
         }
     }
 
+    /**
+     * 记一次"缺这个物品"的取货需求。
+     *
+     * <p>★ v1.8.3：被「在途 / 40 tick 去重 / 无货退避」挡下的需求**不再静默丢掉**，
+     * 而是压进 {@link #demand}，由 {@link #flushDemand()} 在冷却结束时补发 —— 旧实现里
+     * 第二个容器在同一个去重窗口内喊缺时请求被吞，容器被记进 failedContainers 就再也不重试，
+     * 表现就是"填一次之后一直报缺材料"（Ray 2026-11-05 第二次实测）。</p>
+     */
     private static void request(Item item) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) {
             return;
         }
         long now = client.world.getTime();
-        if (waiting.contains(item)) {
+        int want = wantedAmount(item);
+        Long last = lastRequestTick.get(item);
+        boolean coolingDown = last != null && now - last < RETRY_TICKS;
+        if (waiting.contains(item) || coolingDown) {
+            demand.merge(item, want, Math::max);   // 等在途 / 冷却结束后补发
             return;
         }
         Long until = noStockUntil.get(item);
@@ -153,19 +167,93 @@ public final class SbpBridge {
             }
             noStockUntil.remove(item);
         }
-        Long last = lastRequestTick.get(item);
-        if (last != null && now - last < RETRY_TICKS) {
+        send(item, want, now);
+    }
+
+    /** 冷却结束就把压下来的需求补发出去（没有压单时是空转）。 */
+    private static void flushDemand() {
+        if (demand.isEmpty()) {
             return;
         }
-        if (!SbpPayloads.canSend()) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null || !SbpPayloads.canSend()) {
             return;
         }
+        long now = client.world.getTime();
+        java.util.Iterator<Map.Entry<Item, Integer>> it = demand.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Item, Integer> entry = it.next();
+            Item item = entry.getKey();
+            if (waiting.contains(item)) {
+                continue;                          // 还在等回包
+            }
+            Long last = lastRequestTick.get(item);
+            if (last != null && now - last < RETRY_TICKS) {
+                continue;                          // 还在去重窗口
+            }
+            Long until = noStockUntil.get(item);
+            if (until != null && now < until) {
+                continue;                          // 背包里确实没有，退避中
+            }
+            it.remove();
+            send(item, Math.max(entry.getValue(), wantedAmount(item)), now);
+        }
+    }
+
+    private static void send(Item item, int count, long now) {
         lastRequestTick.put(item, now);
         waiting.add(item);
         waitingSince.put(item, now);
         Identifier id = Registries.ITEM.getId(item);
-        SbpPayloads.sendExtract(id, Math.max(1, item.getMaxCount()));
-        LOGGER.info("[sbp] 填充机缺料 {} → 请求从精妙背包取货", id);
+        SbpPayloads.sendExtract(id, Math.max(1, count));
+        LOGGER.info("[sbp] 填充机缺料 {} → 请求从精妙背包取货 x{}", id, count);
+    }
+
+    /**
+     * 这次要取多少个 ＝ **所有排队容器对该物品的需求合计 − 背包里现有的散装数量**。
+     *
+     * <p>★ v1.8.3：旧实现固定按 {@code item.getMaxCount()} 取 —— 工具类（锹/镐）最大堆叠
+     * 只有 1，于是一排容器每填一个都要往返一次，慢到爆；而且中间那些容器全被判缺料。</p>
+     */
+    private static int wantedAmount(Item item) {
+        int need = 0;
+        for (PendingTask task : pendingTasks.values()) {
+            for (ItemStack req : task.required.values()) {
+                if (!req.isEmpty() && req.getItem() == item) {
+                    need += req.getCount();
+                }
+            }
+        }
+        return Math.max(1, need - looseCount(item));
+    }
+
+    /** 玩家 36 格里的散装数量（潜影盒内的不算：那些要开盒才能用，仍算"缺"）。 */
+    private static int looseCount(Item item) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) {
+            return 0;
+        }
+        int count = 0;
+        for (int slot = 0; slot < Math.min(36, client.player.getInventory().size()); slot++) {
+            ItemStack stack = client.player.getInventory().getStack(slot);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    /** 这些材料是否正在取货（在途或排队补发）⇒ 给"抑制缺少材料红字"用。 */
+    public static boolean isFetching(java.util.Collection<Item> types) {
+        if (types == null || types.isEmpty()) {
+            return false;
+        }
+        for (Item item : types) {
+            if (waiting.contains(item) || demand.containsKey(item)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 服务端回包：reason 0=成功 / 1=没找到 / 2=空间不足。 */
@@ -173,6 +261,7 @@ public final class SbpBridge {
         Item item = Registries.ITEM.get(itemId);
         waiting.remove(item);
         waitingSince.remove(item);
+        demand.remove(item);            // 这一次的账已结清；还需要更多会在下次判缺料时重新记
         registerStashed(stashed);
         MinecraftClient client = MinecraftClient.getInstance();
         long now = client.world == null ? 0L : client.world.getTime();
@@ -254,6 +343,7 @@ public final class SbpBridge {
      */
     public static void tick() {
         expireStaleWaiting();
+        flushDemand();
         tickReturnStash();
         if (pendingTasks.isEmpty()) {
             return;
@@ -261,7 +351,7 @@ public final class SbpBridge {
         long now = System.currentTimeMillis();
         AutoFillerStateMachine machine = null;
         for (PendingTask task : new java.util.ArrayList<>(pendingTasks.values())) {
-            if (now - task.storedAt > 10_000L) {
+            if (now - task.storedAt > 30_000L) {
                 pendingTasks.remove(task.pos.toShortString());
                 continue;
             }
