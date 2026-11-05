@@ -27,9 +27,19 @@
 | 标题栏显示版本号 | `Reference.MOD_VERSION` + `GuiConfigs` 标题拼接 |
 | 0.10.5-Ray 修启动崩溃 | ⚠️ **mixins.json 里的条目必须相对 `package`**：写成 `compat.sbp.mixin.X` 会被再拼一次包前缀 ⇒ ClassNotFound ⇒ PREPARE 失败（连带把 carpet-ams 的 preLaunch 拖崩）。类放 `…litematicafiller.mixin` 包、json 只写类名 |
 
+## 版本状态（Ray 实测）
+
+| 版本 | 内容 | 状态 |
+|---|---|---|
+| **1.8.5-Ray** | 补给泵：取货量按「排队容器需求合计 − 现有散装」；被去重挡下的需求排队补发；判「材料耗尽」前先看补给是否在途；容器已满足 / 玩家开着界面时停止重提交 | ✅ Ray 2026-11-05「测试好像没啥问题，正常」 |
+| 1.8.2 → 1.8.4 | 搬盒后立刻判耗尽 → 填一次就报缺材料 → 自动重提交改补给泵（1.8.5 收尾） | 中间态，**别再回退到这几版** |
+| 1.5.0 / 1.5.1 | 盒装材料「整盒搬出」+ 增强潜影盒大容量 | ✅ 实测通过 |
+
 ## 快捷精妙背包提取（设计要点）
 
-- 触发：`markMissingMaterials(pos, missingTypes)`（所有"缺料判定"的唯一收敛点）→ 按物品发 C2S 请求（40 tick 去重、无货退避 200 tick）。
+- 触发：`markMissingMaterials(pos, missingTypes)`（所有"缺料判定"的唯一收敛点）→ 按物品发 C2S 请求（10 tick 去重、无货退避 200 tick）。
+- 取货量：**所有排队容器对该物品的需求合计 − 背包里现有散装**（工具类最大堆叠=1，按堆叠算会一次只搬 1 个）。被「在途 / 去重 / 无货」挡下的需求压进 `demand` 队列、冷却后自动补发（**不丢单**）。
+- 自动重提交（补给泵）：`pendingTasks` 保留 30s、每 500ms 最多提交一次；**提交前先问 `stillNeedsFill()`**（已满足就停手），玩家开着任意界面时也让路。
 - 服务端：`SbpServerExtract` 用精妙背包 API 抽货（先模拟后真取；背包满先回腾位置；绝不掉地）。
 - 回包成功：若该容器缺的物品都已进玩家背包 → `clearFailedContainer(pos)` + 重新 `addManualTask`/`addTask`
   （填充机第一次判缺料时会把容器记进 `failedContainers`，不清理就会被 `addTask` 开头直接拒绝）。
