@@ -598,8 +598,17 @@ public final class BatchToolController {
             required = Map.of();
         }
         if (required.isEmpty()) {
-            this.fillNoData = true;
-            return;
+            // 空 map 有两种含义：①投影里没有这个容器（跳过）②投影里这个容器本来就是空的（清空它）。
+            boolean schematicHasContainer = false;
+            try {
+                var schematicWorld = fi.dy.masa.litematica.world.SchematicWorldHandler.getSchematicWorld();
+                schematicHasContainer = schematicWorld != null && schematicWorld.getBlockEntity(this.current) != null;
+            } catch (Throwable ignored) {
+            }
+            if (!schematicHasContainer) {
+                this.fillNoData = true;
+                return;
+            }
         }
 
         Map<Integer, ItemStack> model = new HashMap<>();
@@ -636,7 +645,7 @@ public final class BatchToolController {
                 model.put(slot.id, ItemStack.EMPTY);
                 planned++;
             }
-            if (!slot.canInsert(target)) {
+            if (!canInsertInto(client, slot, target)) {
                 // 目标槽不收这种物品（熔炉燃料槽 / 输出槽等）⇒ 记缺料，别硬塞。
                 missing += target.getCount();
                 continue;
@@ -695,8 +704,24 @@ public final class BatchToolController {
         }
     }
 
-    private int findPlayerSlotWithItem(Map<Integer, ItemStack> model, List<Integer> playerSlots, ItemStack target) {
-        for (int slotId : playerSlots) {
+    /**
+     * 判断某个容器槽能不能放这种物品。优先问**真实方块实体**的 Inventory：
+     * 影子菜单里的槽位是 `SimpleInventory`（什么都收），会漏掉熔炉输出槽/燃料槽这类限制。
+     */
+    private boolean canInsertInto(MinecraftClient client, Slot slot, ItemStack target) {
+        if (this.current != null && client.world != null) {
+            net.minecraft.block.entity.BlockEntity blockEntity = client.world.getBlockEntity(this.current);
+            if (blockEntity instanceof net.minecraft.inventory.Inventory inventory) {
+                try {
+                    return inventory.isValid(slot.getIndex(), target);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return slot.canInsert(target);
+    }
+
+    private int findPlayerSlotWithItem(Map<Integer, ItemStack> model, List<Integer> playerSlots, ItemStack target) {        for (int slotId : playerSlots) {
             ItemStack stack = model.getOrDefault(slotId, ItemStack.EMPTY);
             if (!stack.isEmpty() && ItemMatcher.isSameItem(stack, target)) {
                 return slotId;
