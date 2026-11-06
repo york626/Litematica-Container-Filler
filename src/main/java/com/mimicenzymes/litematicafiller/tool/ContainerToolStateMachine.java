@@ -337,13 +337,11 @@ public class ContainerToolStateMachine {
                 }
 
                 RealContainerCache.updateFromHandler(client, handler);
-                // ★★ v1.10.1-Ray：**批量模式中途不要关箱**。
-                //   关箱（closeContainer）会把客户端菜单立刻切回"玩家背包"，而下一格的开箱请求
-                //   紧随其后发出 —— 如果下一个界面先到、关闭动作后生效，就会把刚切好的菜单覆盖回去
-                //   ⇒ 工具以为没开箱 ⇒ 20 tick 超时（日志实证：同一排里 #13 超时、#15/#16 又正常，
-                //   典型的竞态）。批量时让界面一直开着、下一个直接顶替；整批结束才关一次。
-                if (!batchActive && (mode != ContainerToolMode.COLLECT_MATERIALS
-                        || Configs.COLLECT_MATERIAL_LIST_ITEMS_CLOSE_GUI.getBooleanValue())) {
+                // ★★ v1.10.2-Ray：恢复"每格关箱"。1.10.1 曾为了躲竞态改成批量中途不关箱，结果
+                //   菜单一直是上一个容器 ⇒ 鼠标被锁、后面的容器根本没打开（清的一直是旧菜单）。
+                //   竞态改由 `openOrTimeout` 里"等菜单回到玩家背包再开下一格"解决。
+                if (mode != ContainerToolMode.COLLECT_MATERIALS
+                        || Configs.COLLECT_MATERIAL_LIST_ITEMS_CLOSE_GUI.getBooleanValue()) {
                     closeHandledScreen(client);
                 }
                 finish(client);
@@ -584,6 +582,15 @@ public class ContainerToolStateMachine {
 
     private void openOrTimeout(MinecraftClient client, BlockPos pos) {
         if (!openedByTool) {
+            // ★★ v1.10.2-Ray：**等上一个容器的关闭生效**再开新的。
+            //   1.10.1 为了躲竞态改成"中途不关箱"，结果菜单一直是上一个容器：
+            //   ① 玩家鼠标被界面锁住、视角不能动；② 新容器根本没打开过，清的一直是上一个 ⇒ 后面的格子没被清空。
+            //   正解：照旧每格关箱（鼠标自由），但开下一格前先等 `currentScreenHandler` 回到玩家背包 ——
+            //   这样既没有"关闭把新菜单顶掉"的竞态，也不会误把旧菜单当成新容器。
+            if (client.player != null
+                    && !(client.player.currentScreenHandler instanceof net.minecraft.screen.PlayerScreenHandler)) {
+                return;
+            }
             openContainer(client, pos);
             openedByTool = true;
         } else if (++uiWaitTicks > 20) {
@@ -1607,14 +1614,16 @@ public class ContainerToolStateMachine {
         if (next == null) {
             int total = this.batch.total();
             this.batchActive = false;
-            // 整批结束才关一次箱（中途关箱会和"下一格开箱"打架，见 PROCESSING 里 1.10.1 的注释）
             if (this.currentPos != null || closeScreen) {
                 closeHandledScreen(client);
             }
             sendProgress(client, "litematica_container_filler.message.tool_batch_done", total, total);
             return false;
         }
-        // ★ v1.10.1-Ray：批量中途**绝不**关箱（竞态根因），下一个容器的界面直接顶替当前界面。
+        // 每格照旧关箱（鼠标自由）；开下一格前由 `openOrTimeout` 等关闭生效。
+        if (closeScreen) {
+            closeHandledScreen(client);
+        }
         scheduleContinuousCooldown();
         this.currentPos = next;
         this.phase = Phase.OPENING_TARGET;
