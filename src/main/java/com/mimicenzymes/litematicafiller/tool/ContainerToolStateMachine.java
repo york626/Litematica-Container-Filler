@@ -95,6 +95,10 @@ public class ContainerToolStateMachine {
     private ContainerToolMode continuousLastMode = null;
     private boolean currentOperationContinuous = false;
 
+    /** ★ 1.9.0-Ray「批量容器操作」：投影里的容器队列（见仓库根 `批量容器操作-设计.md`）。 */
+    private final ContainerBatchQueue batch = new ContainerBatchQueue();
+    private boolean batchActive = false;
+
     private final IShulkerExtractor shulkerExtractor;
 
     private ContainerToolStateMachine() {
@@ -459,8 +463,24 @@ public class ContainerToolStateMachine {
             Configs.WORKING_STATE.setBooleanValue(false);
         }
 
-        BlockPos looked = getLookedContainerPos(client);
+        BlockPos looked;
+        if (useBatchMode(toolMode)) {
+            // ★ 1.9.0-Ray 批量：把投影里所有容器排队，从最近的一个开始；不需要对准某个容器。
+            batch.clear();
+            int built = batch.build(client);
+            if (built <= 0) {
+                send(client, "litematica_container_filler.message.tool_batch_empty");
+                return;
+            }
+            batchActive = true;
+            looked = batch.poll();
+            sendProgress(client, "litematica_container_filler.message.tool_batch_progress", 1, batch.total());
+        } else {
+            batchActive = false;
+            looked = getLookedContainerPos(client);
+        }
         if (looked == null) {
+            batchActive = false;
             send(client, "litematica_container_filler.message.target_invalid");
             return;
         }
@@ -1537,13 +1557,62 @@ public class ContainerToolStateMachine {
     }
 
     private void finish(MinecraftClient client) {
+        if (continueBatch(client, false)) {
+            return;
+        }
         if (!currentOperationContinuous) {
             send(client, "litematica_container_filler.message.tool_done");
         }
         reset(client, false, true);
     }
 
+    /**
+     * 批量模式：当前容器处理完（成功或失败）⇒ 记完成、取下一个继续；队列空了返回 false 让调用方正常收尾。
+     */
+    private boolean continueBatch(MinecraftClient client, boolean closeScreen) {
+        if (!this.batchActive) {
+            return false;
+        }
+        if (this.currentPos != null) {
+            this.batch.complete(this.currentPos);
+        }
+        BlockPos next = this.batch.poll();
+        if (next == null) {
+            int total = this.batch.total();
+            this.batchActive = false;
+            sendProgress(client, "litematica_container_filler.message.tool_batch_done", total, total);
+            return false;
+        }
+        if (closeScreen) {
+            closeHandledScreen(client);
+        }
+        scheduleContinuousCooldown();
+        this.currentPos = next;
+        this.phase = Phase.OPENING_TARGET;
+        this.uiWaitTicks = 0;
+        this.openedByTool = false;
+        sendProgress(client, "litematica_container_filler.message.tool_batch_progress",
+                this.batch.doneCount() + 1, this.batch.total());
+        return true;
+    }
+
+    /** 批量模式只接管「清空容器」（填充等下一步再做，见设计文档）。 */
+    private boolean useBatchMode(ContainerToolMode toolMode) {
+        return Configs.TOOL_BATCH_SELECTION.getBooleanValue() && toolMode == ContainerToolMode.CLEAR;
+    }
+
+    /** 进度提示：**不受** `currentOperationContinuous` 抑制（批量时每格都要看到 n/总数）。 */
+    private void sendProgress(MinecraftClient client, String key, Object... args) {
+        if (client != null && client.player != null) {
+            client.player.sendMessage(Text.translatable(key, args), true);
+        }
+    }
+
     private void fail(MinecraftClient client, String messageKey) {
+        // ★ 1.9.0-Ray 批量：单个容器失败不打断整批（跳过它继续下一个）
+        if (continueBatch(client, true)) {
+            return;
+        }
         if (!currentOperationContinuous) {
             send(client, messageKey);
         }
@@ -1567,6 +1636,9 @@ public class ContainerToolStateMachine {
         currentPos = null;
         uiWaitTicks = 0;
         openedByTool = false;
+        // ★ 1.9.0-Ray：正常收尾时清掉批量队列（`continueBatch` 走的是"不 reset"的另一条路）
+        batchActive = false;
+        batch.clear();
         packingShulkerSlot = -1;
         packingStack = ItemStack.EMPTY;
         packingCountBefore = 0;
