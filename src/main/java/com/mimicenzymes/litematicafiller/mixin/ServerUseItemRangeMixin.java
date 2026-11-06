@@ -1,9 +1,9 @@
 package com.mimicenzymes.litematicafiller.mixin;
 
 import com.mimicenzymes.litematicafiller.config.Configs;
+import com.mimicenzymes.litematicafiller.tool.BatchToolState;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
@@ -43,7 +43,9 @@ public abstract class ServerUseItemRangeMixin {
     )
     private boolean litematicaContainerFiller$allowFarContainerUse(ServerPlayerEntity player, BlockPos pos, double margin) {
         boolean original = player.canInteractWithBlockAt(pos, margin);
-        boolean bypass = Configs.BATCH_TOOL_FAR_REACH.getBooleanValue() && pos != null
+        boolean bypass = Configs.BATCH_TOOL_FAR_REACH.getBooleanValue()
+                && BatchToolState.isActive()
+                && pos != null
                 && player.getWorld().getBlockState(pos).hasBlockEntity();
         long now = System.currentTimeMillis();
         if (!original && bypass && now - lcf$lastProbe > 1000L) {
@@ -64,7 +66,9 @@ public abstract class ServerUseItemRangeMixin {
         if (handler.canUse(player)) {
             return true;
         }
-        if (!Configs.BATCH_TOOL_FAR_REACH.getBooleanValue() || !lcf$isContainerMenu(handler)) {
+        if (!Configs.BATCH_TOOL_FAR_REACH.getBooleanValue()
+                || !BatchToolState.isActive()
+                || !BatchToolState.isContainerMenu(handler)) {
             return false;
         }
         long now = System.currentTimeMillis();
@@ -73,24 +77,5 @@ public abstract class ServerUseItemRangeMixin {
             LOGGER.info("[batch-farreach] 放行远距离容器点击 menu={}", handler.getType());
         }
         return true;
-    }
-
-    /** 只认容器类菜单，避免把玩家背包/合成/交易等菜单的距离限制一起改掉。 */
-    private static boolean lcf$isContainerMenu(ScreenHandler handler) {
-        ScreenHandlerType<?> type = handler.getType();
-        return type == ScreenHandlerType.GENERIC_9X1
-                || type == ScreenHandlerType.GENERIC_9X2
-                || type == ScreenHandlerType.GENERIC_9X3
-                || type == ScreenHandlerType.GENERIC_9X4
-                || type == ScreenHandlerType.GENERIC_9X5
-                || type == ScreenHandlerType.GENERIC_9X6
-                || type == ScreenHandlerType.GENERIC_3X3
-                || type == ScreenHandlerType.CRAFTER_3X3
-                || type == ScreenHandlerType.SHULKER_BOX
-                || type == ScreenHandlerType.HOPPER
-                || type == ScreenHandlerType.FURNACE
-                || type == ScreenHandlerType.BLAST_FURNACE
-                || type == ScreenHandlerType.SMOKER
-                || type == ScreenHandlerType.BREWING_STAND;
     }
 }

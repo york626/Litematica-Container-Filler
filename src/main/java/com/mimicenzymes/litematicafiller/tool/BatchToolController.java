@@ -66,12 +66,10 @@ public final class BatchToolController {
     private static final int OPEN_TIMEOUT_TICKS = 20;
     /** OpenScreen 之后等 InventoryS2CPacket 的上限（tick）。 */
     private static final int CONTENT_TIMEOUT_TICKS = 20;
-    /** 点击包发完后等服务器同步的 tick 数（再决定要不要补第二遍）。 */
-    private static final int SETTLE_TICKS = 2;
-    /** 关闭包发出后等 CloseScreenS2CPacket 的上限（tick）。 */
-    private static final int CLOSE_TIMEOUT_TICKS = 10;
-    /** 两格之间额外等待的 tick 数（关箱确认后再等，避免"关箱顶掉刚开的菜单"）。 */
-    private static final int CONTAINER_GAP_TICKS = 2;
+    /** 点击包发完后等服务器同步的 tick 数（清空丢地/进背包 1 tick 就够）。 */
+    private static final int SETTLE_TICKS = 1;
+    /** 「放入背包+丢出」第二遍前多等一会儿，让服务端把背包同步回来。 */
+    private static final int SETTLE_TICKS_SECOND_PASS = 2;
     /** 每 tick 最多发多少个点击包（大箱子一次几百个会顶出服务端 tick）。 */
     private static final int MAX_CLICKS_PER_TICK = 64;
 
@@ -81,9 +79,7 @@ public final class BatchToolController {
         WAIT_CONTENT,
         ACT,
         EXECUTE,
-        SETTLE,
-        WAIT_CLOSE,
-        GAP
+        SETTLE
     }
 
     private record ClickOp(int slot, int button, SlotActionType action) {
@@ -96,11 +92,10 @@ public final class BatchToolController {
     private BatchToolMode mode = BatchToolMode.CLEAR;
     private BlockPos current;
     private int waited;
-    private int gapTicks;
+    private long openedAtMs;
     private int syncId = -1;
     private ScreenHandler shadow;
     private boolean contentReady;
-    private boolean closeSeen;
     private boolean secondPass;
     private int clearPass;
     private int total;
@@ -169,6 +164,7 @@ public final class BatchToolController {
 
         stopOtherWork(client);
         resetState();
+        BatchToolState.setActive(true);
         this.mode = selected;
         this.queue.addAll(targets);
         this.total = targets.size();
@@ -225,7 +221,6 @@ public final class BatchToolController {
             }
             this.syncId = packetSyncId;
             this.contentReady = false;
-            this.closeSeen = false;
             this.waited = 0;
             this.phase = Phase.WAIT_CONTENT;
             LOGGER.info("[batch] 接管界面 syncId={} type={} pos={}", packetSyncId, type, this.current);
@@ -276,11 +271,7 @@ public final class BatchToolController {
      * @return true = 这条包由批量工具吃掉（避免原版 {@code player.closeScreen()} 关掉玩家正开着的其他界面）
      */
     public boolean handleCloseScreen(int packetSyncId) {
-        if (this.shadow != null && packetSyncId == this.syncId) {
-            this.closeSeen = true;
-            return true;
-        }
-        return false;
+        return this.shadow != null && packetSyncId == this.syncId;
     }
 
     // ------------------------------------------------------------------
@@ -340,33 +331,18 @@ public final class BatchToolController {
                 }
             }
             case SETTLE -> {
-                if (++this.waited >= SETTLE_TICKS) {
+                // 数据通道下所有包都在同一条连接上按序到达：点击包一定先于下一次右键包被服务端处理，
+                // 所以**不需要每格显式关箱**——服务端开下一格时自己会 closeHandledScreen() 关上一格。
+                int settle = this.secondPass ? SETTLE_TICKS_SECOND_PASS : SETTLE_TICKS;
+                if (++this.waited >= settle) {
                     if (this.secondPass && hasContainerItems(client)) {
                         this.secondPass = false;
                         this.clearPass = 2;
                         this.waited = 0;
                         this.phase = Phase.ACT;
                     } else {
-                        sendClose(client);
-                        this.waited = 0;
-                        this.phase = Phase.WAIT_CLOSE;
+                        finishCurrent(client);
                     }
-                }
-            }
-            case WAIT_CLOSE -> {
-                if (this.closeSeen) {
-                    completeCurrent(client);
-                    this.gapTicks = CONTAINER_GAP_TICKS;
-                    this.phase = Phase.GAP;
-                } else if (++this.waited > CLOSE_TIMEOUT_TICKS) {
-                    completeCurrent(client);
-                    this.gapTicks = CONTAINER_GAP_TICKS;
-                    this.phase = Phase.GAP;
-                }
-            }
-            case GAP -> {
-                if (--this.gapTicks <= 0) {
-                    openNext(client);
                 }
             }
             default -> {
@@ -405,12 +381,21 @@ public final class BatchToolController {
             finish(client);
             return;
         }
+        openContainer(client, pos);
+    }
+
+    /**
+     * 开下一格。**不发关箱包**：服务端 {@code openHandledScreen} 发现还有容器开着会先
+     * {@code closeHandledScreen()} 关掉上一格，然后才开新的；包在同一条连接上按序处理，
+     * 所以上一格的点击一定先于这次右键生效。这样每格省掉「关箱 → 等确认 → 再等 2 tick」。
+     */
+    private void openContainer(MinecraftClient client, BlockPos pos) {
         this.current = pos.toImmutable();
         this.waited = 0;
+        this.openedAtMs = System.currentTimeMillis();
         // ⚠️ 故意不清 shadow / syncId：上一格迟到的背包同步包还要灌进玩家背包；
         //    新的 OpenScreen 到达时 handleOpenScreen 会整体替换。
         this.contentReady = false;
-        this.closeSeen = false;
         this.secondPass = false;
         this.clearPass = 1;
         this.fillMissing = 0;
@@ -422,15 +407,24 @@ public final class BatchToolController {
         client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hit);
     }
 
-    private void completeCurrent(MinecraftClient client) {
+    /** 当前格处理完：记完成、刷缓存，然后直接开下一格（最后一格才真正关箱）。 */
+    private void finishCurrent(MinecraftClient client) {
         this.done++;
         this.consecutiveSkips = 0;
         cacheSnapshot(client);
-        LOGGER.info("[batch] 完成 {}/{} pos={}", this.done, this.total, this.current);
+        LOGGER.info("[batch] 完成 {}/{} pos={} 耗时 {}ms",
+                this.done, this.total, this.current, System.currentTimeMillis() - this.openedAtMs);
         if (this.total > 1) {
             message(client, "litematica_container_filler.message.batch_tool_progress", this.done, this.total);
         }
         this.current = null;
+
+        BlockPos next = this.queue.poll();
+        if (next == null) {
+            finish(client);
+        } else {
+            openContainer(client, next);
+        }
     }
 
     private void skip(MinecraftClient client, String messageKey) {
@@ -447,6 +441,7 @@ public final class BatchToolController {
         }
         LOGGER.info("[batch] 跳过 pos={} 原因={} syncId={} 影子菜单={}",
                 this.current, messageKey, this.syncId, this.shadow == null ? "无" : "有");
+        // 这一格没开成/没处理成：如果服务端还开着它（或上一格），先关掉再开下一格。
         sendClose(client);
         message(client, messageKey);
         // 跳过不代表容器被清空，RealContainerCache 保持原样（下次高亮/填充仍会看到它）。
@@ -460,13 +455,18 @@ public final class BatchToolController {
             return;
         }
 
-        this.gapTicks = CONTAINER_GAP_TICKS;
-        this.phase = Phase.GAP;
+        BlockPos next = this.queue.poll();
+        if (next == null) {
+            finish(client);
+        } else {
+            openContainer(client, next);
+        }
     }
 
     private void finish(MinecraftClient client) {
         int doneCount = this.done;
         int skippedCount = this.skipped;
+        sendClose(client);
         resetState();
         LOGGER.info("[batch] 结束：完成 {} / 跳过 {} / 共 {}", doneCount, skippedCount, doneCount + skippedCount);
         message(client, "litematica_container_filler.message.batch_tool_done", doneCount, skippedCount);
@@ -484,22 +484,22 @@ public final class BatchToolController {
         this.mode = BatchToolMode.CLEAR;
         this.current = null;
         this.waited = 0;
-        this.gapTicks = 0;
         this.queue.clear();
         this.total = 0;
         this.done = 0;
         this.skipped = 0;
         this.consecutiveSkips = 0;
         this.contentReady = false;
-        this.closeSeen = false;
         this.secondPass = false;
         this.clearPass = 1;
         this.fillMissing = 0;
         this.fillNoData = false;
         this.clickPlan.clear();
         this.lingerTicks = 20;
+        // 服务端 mixin（远距离放行 / 超距不自动关箱）靠这个开关判断"是不是批量工具在跑"。
+        BatchToolState.setActive(false);
         // shadow / syncId 故意保留：关箱包可能晚到一两 tick，还要靠它们吃掉
-        // CloseScreen 并同步玩家背包；lingerTicks 到点或下一次 openNext 会整体替换。
+        // CloseScreen 并同步玩家背包；lingerTicks 到点或下一次 openContainer 会整体替换。
     }
 
     private void sendClose(MinecraftClient client) {
