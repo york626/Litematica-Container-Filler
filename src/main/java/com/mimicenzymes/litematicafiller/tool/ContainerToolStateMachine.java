@@ -95,14 +95,6 @@ public class ContainerToolStateMachine {
     private ContainerToolMode continuousLastMode = null;
     private boolean currentOperationContinuous = false;
 
-    /** ★ 1.9.0-Ray「批量容器操作」：投影里的容器队列（见仓库根 `批量容器操作-设计.md`）。 */
-    private final ContainerBatchQueue batch = new ContainerBatchQueue();
-    private boolean batchActive = false;
-    /** ★ 1.9.4-Ray 计时探针：当前这一格从"开始开箱/开好箱"起的 tick 基准。 */
-    private long batchStepTick = 0L;
-    private static final org.slf4j.Logger LOGGER =
-            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
-
     private final IShulkerExtractor shulkerExtractor;
 
     private ContainerToolStateMachine() {
@@ -298,11 +290,6 @@ public class ContainerToolStateMachine {
                     openOrTimeout(client, currentPos);
                     return;
                 }
-                // ★ 1.9.4-Ray 计时探针：开箱成功（看"开箱"这一段耗时）
-                LOGGER.info("[batchtool] opened {} 用时 {} tick（批量 {} / {}）",
-                        currentPos, client.world.getTime() - batchStepTick,
-                        batch.doneCount() + 1, batch.total());
-                batchStepTick = client.world.getTime();
 
                 phase = Phase.PROCESSING;
             }
@@ -337,11 +324,7 @@ public class ContainerToolStateMachine {
                 }
 
                 RealContainerCache.updateFromHandler(client, handler);
-                // ★★ v1.10.2-Ray：恢复"每格关箱"。1.10.1 曾为了躲竞态改成批量中途不关箱，结果
-                //   菜单一直是上一个容器 ⇒ 鼠标被锁、后面的容器根本没打开（清的一直是旧菜单）。
-                //   竞态改由 `openOrTimeout` 里"等菜单回到玩家背包再开下一格"解决。
-                if (mode != ContainerToolMode.COLLECT_MATERIALS
-                        || Configs.COLLECT_MATERIAL_LIST_ITEMS_CLOSE_GUI.getBooleanValue()) {
+                if (mode != ContainerToolMode.COLLECT_MATERIALS || Configs.COLLECT_MATERIAL_LIST_ITEMS_CLOSE_GUI.getBooleanValue()) {
                     closeHandledScreen(client);
                 }
                 finish(client);
@@ -476,24 +459,8 @@ public class ContainerToolStateMachine {
             Configs.WORKING_STATE.setBooleanValue(false);
         }
 
-        BlockPos looked;
-        if (useBatchMode(toolMode)) {
-            // ★ 1.9.0-Ray 批量：把投影里所有容器排队，从最近的一个开始；不需要对准某个容器。
-            batch.clear();
-            int built = batch.build(client);
-            if (built <= 0) {
-                send(client, "litematica_container_filler.message.tool_batch_empty");
-                return;
-            }
-            batchActive = true;
-            looked = batch.poll();
-            sendProgress(client, "litematica_container_filler.message.tool_batch_progress", 1, batch.total());
-        } else {
-            batchActive = false;
-            looked = getLookedContainerPos(client);
-        }
+        BlockPos looked = getLookedContainerPos(client);
         if (looked == null) {
-            batchActive = false;
             send(client, "litematica_container_filler.message.target_invalid");
             return;
         }
@@ -582,24 +549,9 @@ public class ContainerToolStateMachine {
 
     private void openOrTimeout(MinecraftClient client, BlockPos pos) {
         if (!openedByTool) {
-            // ★★ v1.10.2-Ray：**等上一个容器的关闭生效**再开新的。
-            //   1.10.1 为了躲竞态改成"中途不关箱"，结果菜单一直是上一个容器：
-            //   ① 玩家鼠标被界面锁住、视角不能动；② 新容器根本没打开过，清的一直是上一个 ⇒ 后面的格子没被清空。
-            //   正解：照旧每格关箱（鼠标自由），但开下一格前先等 `currentScreenHandler` 回到玩家背包 ——
-            //   这样既没有"关闭把新菜单顶掉"的竞态，也不会误把旧菜单当成新容器。
-            if (client.player != null
-                    && !(client.player.currentScreenHandler instanceof net.minecraft.screen.PlayerScreenHandler)) {
-                return;
-            }
             openContainer(client, pos);
             openedByTool = true;
         } else if (++uiWaitTicks > 20) {
-            // ★ 1.9.8-Ray 诊断：超时时把"三道闸"的状态一次打出来
-            LOGGER.info("[batchtool] timeout {} handler={} screen={} pendingClicks={}",
-                    pos,
-                    client.player == null ? "null" : client.player.currentScreenHandler.getClass().getSimpleName(),
-                    client.currentScreen == null ? "null" : client.currentScreen.getClass().getSimpleName(),
-                    com.mimicenzymes.litematicafiller.network.ClickPacketRateLimiter.pendingCount());
             fail(client, "litematica_container_filler.message.container_timeout");
         }
     }
@@ -1585,78 +1537,13 @@ public class ContainerToolStateMachine {
     }
 
     private void finish(MinecraftClient client) {
-        if (this.batchActive) {
-            // ★ 1.9.4-Ray 计时探针：这一格从"开好箱"到"处理完"用了多少 tick
-            long dt = client.world == null ? -1L : client.world.getTime() - this.batchStepTick;
-            LOGGER.info("[batchtool] done {} 处理用时 {} tick（批量 {} / {}）",
-                    this.currentPos, dt, this.batch.doneCount() + 1, this.batch.total());
-        }
-        if (continueBatch(client, false)) {
-            return;
-        }
         if (!currentOperationContinuous) {
             send(client, "litematica_container_filler.message.tool_done");
         }
         reset(client, false, true);
     }
 
-    /**
-     * 批量模式：当前容器处理完（成功或失败）⇒ 记完成、取下一个继续；队列空了返回 false 让调用方正常收尾。
-     */
-    private boolean continueBatch(MinecraftClient client, boolean closeScreen) {
-        if (!this.batchActive) {
-            return false;
-        }
-        if (this.currentPos != null) {
-            this.batch.complete(this.currentPos);
-        }
-        BlockPos next = this.batch.poll();
-        if (next == null) {
-            int total = this.batch.total();
-            this.batchActive = false;
-            if (this.currentPos != null || closeScreen) {
-                closeHandledScreen(client);
-            }
-            sendProgress(client, "litematica_container_filler.message.tool_batch_done", total, total);
-            return false;
-        }
-        // 每格照旧关箱（鼠标自由）；开下一格前由 `openOrTimeout` 等关闭生效。
-        if (closeScreen) {
-            closeHandledScreen(client);
-        }
-        scheduleContinuousCooldown();
-        this.currentPos = next;
-        this.phase = Phase.OPENING_TARGET;
-        this.uiWaitTicks = 0;
-        this.openedByTool = false;
-        // ★ 1.9.4-Ray 计时探针：这一格"开始开箱"的 tick 基准（下次 finished 时会打印耗时）
-        this.batchStepTick = client.world == null ? 0L : client.world.getTime();
-        LOGGER.info("[batchtool] start {} 开箱（批量 {} / {}）", next,
-                this.batch.doneCount() + 1, this.batch.total());
-        sendProgress(client, "litematica_container_filler.message.tool_batch_progress",
-                this.batch.doneCount() + 1, this.batch.total());
-        return true;
-    }
-
-    /** 批量模式只接管「清空容器」（填充等下一步再做，见设计文档）。 */
-    private boolean useBatchMode(ContainerToolMode toolMode) {
-        // ★ v1.11.0-Ray：批量容器操作已**独立实现**（BatchClearController，单独热键），
-        //   容器工具不再承担批量职责 ⇒ 这里恒 false，保留旧代码仅作历史参考。
-        return false;
-    }
-
-    /** 进度提示：**不受** `currentOperationContinuous` 抑制（批量时每格都要看到 n/总数）。 */
-    private void sendProgress(MinecraftClient client, String key, Object... args) {
-        if (client != null && client.player != null) {
-            client.player.sendMessage(Text.translatable(key, args), true);
-        }
-    }
-
     private void fail(MinecraftClient client, String messageKey) {
-        // ★ 1.9.0-Ray 批量：单个容器失败不打断整批（跳过它继续下一个）
-        if (continueBatch(client, true)) {
-            return;
-        }
         if (!currentOperationContinuous) {
             send(client, messageKey);
         }
@@ -1680,9 +1567,6 @@ public class ContainerToolStateMachine {
         currentPos = null;
         uiWaitTicks = 0;
         openedByTool = false;
-        // ★ 1.9.0-Ray：正常收尾时清掉批量队列（`continueBatch` 走的是"不 reset"的另一条路）
-        batchActive = false;
-        batch.clear();
         packingShulkerSlot = -1;
         packingStack = ItemStack.EMPTY;
         packingCountBefore = 0;

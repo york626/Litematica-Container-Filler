@@ -68,11 +68,6 @@ public class Callbacks implements IHotkeyCallback {
             return true;
         }
 
-        if (key == Hotkeys.BATCH_CLEAR_TRIGGER.getKeybind()) {
-            com.mimicenzymes.litematicafiller.tool.BatchClearController.getInstance().toggle(mc);
-            return true;
-        }
-
         if (key == Hotkeys.TOOL_TRIGGER.getKeybind()) {
             ContainerToolStateMachine.getInstance().triggerCurrent(mc);
             return true;

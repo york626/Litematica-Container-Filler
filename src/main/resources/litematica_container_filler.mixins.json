@@ -3,15 +3,12 @@
   "minVersion": "0.8",
   "package": "com.mimicenzymes.litematicafiller.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [
-    "ServerUseItemRangeMixin"
-  ],
+  "mixins": [],
   "client": [
     "ClientCommonNetworkHandlerMixin",
     "ClientPlayerInteractionManagerMixin",
-    "HandledScreenRenderMixin",
+    "ScreenInterceptorMixin",
     "ClientPlayNetworkHandlerMixin",
-    "BatchClearScreenMixin",
     "InGameHudMixin",
     "GuiMainMenuMixin",
     "GuiMaterialListMixin",

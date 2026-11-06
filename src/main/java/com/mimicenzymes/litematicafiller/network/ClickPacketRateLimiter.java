@@ -25,11 +25,6 @@ public class ClickPacketRateLimiter {
         operationActive = active;
     }
 
-    /** ★ 1.9.8-Ray 诊断：当前还积压多少个被限流的点击包。 */
-    public static int pendingCount() {
-        return BUFFER.size();
-    }
-
     public static boolean hasPendingPackets() {
         return !BUFFER.isEmpty();
     }

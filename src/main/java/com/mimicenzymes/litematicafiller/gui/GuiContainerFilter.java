@@ -9,7 +9,6 @@ import fi.dy.masa.malilib.gui.button.IButtonActionListener;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.block.Block;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -83,14 +82,7 @@ public class GuiContainerFilter extends GuiBase {
 
     @Override
     public void close() {
-        Screen target = this.parent;
-        // ★★ v1.8.7-Ray：`GuiBase.openGui(screen)` 会把被打开界面的 parent 设成**当前界面**，
-        //   于是关本界面时若又调 openGui(parent) ⇒ 配置界面的 parent 指回本界面 ⇒ 成环 ⇒ ESC 来回弹。
-        //   修法同 GuiRenderEditor：先断回指，再只用 setScreen 切过去。
-        if (target instanceof GuiBase guiBase && guiBase.getParent() instanceof GuiContainerFilter) {
-            guiBase.setParent(null);
-        }
-        MinecraftClient.getInstance().setScreen(target);
+        GuiBase.openGui(this.getParent());
     }
 
     @Override
