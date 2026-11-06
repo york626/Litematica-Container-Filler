@@ -8,6 +8,7 @@ import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -281,7 +282,16 @@ public class GuiGlobalMaterialReplacementPicker extends GuiBase {
     }
 
     private void closeToParent() {
-        GuiBase.openGui(this.parent);
+        Screen target = this.parent;
+        // ★★ v1.8.7-Ray（真凶）：`GuiBase.openGui(screen)` 会把被打开界面的 parent 设成**当前界面**
+        //   ⇒ 关掉本界面时若还调 openGui(parent)，等于把配置界面的 parent 指回本界面 ⇒ 成环 ⇒
+        //   ESC 在两屏之间永远来回弹。修法照 GuiRenderEditor 2026-11-04 的已验证写法：
+        //   ① 先断开"父界面把本界面当 parent"的回指；② 只用 setScreen 切过去（不再过 openGui）。
+        if (target instanceof GuiBase guiBase
+                && guiBase.getParent() instanceof GuiGlobalMaterialReplacementPicker) {
+            guiBase.setParent(null);
+        }
+        MinecraftClient.getInstance().setScreen(target);
     }
 
     @Override
