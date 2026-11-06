@@ -81,6 +81,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean ENABLE_TOOL_HOLD_REPEAT       = new ConfigBoolean("litematica_container_filler.config.name.enableToolHoldRepeat", false, "litematica_container_filler.config.comment.enableToolHoldRepeat");
     /** ★ 1.9.0-Ray：批量容器操作（把投影里所有容器排成队列处理）—— 见仓库根 `批量容器操作-设计.md`。 */
     public static final ConfigBoolean TOOL_BATCH_SELECTION          = new ConfigBoolean("litematica_container_filler.config.name.toolBatchSelection", false, "litematica_container_filler.config.comment.toolBatchSelection");
+    /** ★ 1.9.3-Ray：容器工具的**远距离开箱**（服务端 mixin，只对容器方块实体生效）。 */
+    public static final ConfigBoolean TOOL_FAR_REACH                = new ConfigBoolean("litematica_container_filler.config.name.toolFarReach", true, "litematica_container_filler.config.comment.toolFarReach");
     public static final ConfigInteger TOOL_REPEAT_SAME_CONTAINER_COOLDOWN = new ConfigInteger("litematica_container_filler.config.name.toolRepeatSameContainerCooldown", 20, 0, 200, "litematica_container_filler.config.comment.toolRepeatSameContainerCooldown");
     public static final ConfigInteger TOOL_FILL_FULL_THRESHOLD       = new ConfigInteger("litematica_container_filler.config.name.toolFillFullThreshold", 2, 1, 36, "litematica_container_filler.config.comment.toolFillFullThreshold");
     public static final ConfigBoolean COLLECT_MATERIAL_LIST_ITEMS_RETAIN = new ConfigBoolean("litematica_container_filler.config.name.collectMaterialListItemsRetain", false, "litematica_container_filler.config.comment.collectMaterialListItemsRetain");
@@ -199,6 +201,7 @@ public class Configs implements IConfigHandler {
                 ENABLE_SYNC_TOOL_QS_EXTRACTION,
                 ENABLE_TOOL_HOLD_REPEAT,
                 TOOL_BATCH_SELECTION,
+                TOOL_FAR_REACH,
                 TOOL_REPEAT_SAME_CONTAINER_COOLDOWN,
                 TOOL_FILL_FULL_THRESHOLD,
                 COLLECT_MATERIAL_LIST_ITEMS_RETAIN,

@@ -3,7 +3,9 @@
   "minVersion": "0.8",
   "package": "com.mimicenzymes.litematicafiller.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "ServerUseItemRangeMixin"
+  ],
   "client": [
     "ClientCommonNetworkHandlerMixin",
     "ClientPlayerInteractionManagerMixin",

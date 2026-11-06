@@ -367,6 +367,8 @@
   "litematica_container_filler.message.tool_batch_done": "§a[Container Filler] Batch complete: %s containers.",
   "litematica_container_filler.config.name.toolBatchSelection": "Batch process schematic containers",
   "litematica_container_filler.config.comment.toolBatchSelection": "When enabled, the tool key ignores the crosshair and queues every container stored in the schematic (nearest first). Use with the Clear mode.",
+  "litematica_container_filler.config.name.toolFarReach": "Container far-reach opening",
+  "litematica_container_filler.config.comment.toolFarReach": "Allow the container tool / batch mode to open containers beyond the interaction range (containers only; normal blocks keep vanilla range). Works in single player or when the server also has this mod.",
   "litematica_container_filler.hud.tool": "%s",
   "litematica_container_filler.hud.tool_hint": "Look at a container, then execute",
   "litematica_container_filler.hud.tool_action": "Press \"%s\" to run",

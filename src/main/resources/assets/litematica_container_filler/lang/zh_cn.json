@@ -330,6 +330,8 @@
   "litematica_container_filler.message.tool_batch_done": "§a[容器填充] 批量处理完成，共 %s 个容器。",
   "litematica_container_filler.config.name.toolBatchSelection": "批量处理投影里的容器",
   "litematica_container_filler.config.comment.toolBatchSelection": "开启后，按容器工具键会**不再看准星**，而是把投影里所有带容器数据的容器排成队列逐个处理（就近优先，配合「清空容器」使用）。",
+  "litematica_container_filler.config.name.toolFarReach": "容器远距离开箱",
+  "litematica_container_filler.config.comment.toolFarReach": "允许容器工具/批量模式打开**交互距离外**的容器（只对容器生效，普通方块仍按原版距离）。单人、或服务端也装了本模组时有效。",
   "litematica_container_filler.message.etc": " 等",
   "litematica_container_filler.config.name.toolEnabled": "启用容器工具",
   "litematica_container_filler.config.name.containerToolMode": "容器工具模式",
