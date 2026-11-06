@@ -581,6 +581,12 @@ public class ContainerToolStateMachine {
             openContainer(client, pos);
             openedByTool = true;
         } else if (++uiWaitTicks > 20) {
+            // ★ 1.9.8-Ray 诊断：超时时把"三道闸"的状态一次打出来
+            LOGGER.info("[batchtool] timeout {} handler={} screen={} pendingClicks={}",
+                    pos,
+                    client.player == null ? "null" : client.player.currentScreenHandler.getClass().getSimpleName(),
+                    client.currentScreen == null ? "null" : client.currentScreen.getClass().getSimpleName(),
+                    com.mimicenzymes.litematicafiller.network.ClickPacketRateLimiter.pendingCount());
             fail(client, "litematica_container_filler.message.container_timeout");
         }
     }
