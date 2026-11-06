@@ -558,6 +558,8 @@ public final class BatchToolController {
             if (!slot.hasStack()) {
                 continue;
             }
+            LOGGER.info("[batch] 待清空槽 slot.id={} index={} item={} count={}",
+                    slot.id, slot.getIndex(), slot.getStack().getItem(), slot.getStack().getCount());
             if (toInventory && !secondRound) {
                 // 先尝试整组塞进玩家背包；背包满的会留在容器里，第二遍再丢。
                 this.clickPlan.add(new ClickOp(slot.id, 0, SlotActionType.QUICK_MOVE));
@@ -745,6 +747,8 @@ public final class BatchToolController {
             return;
         }
         int revision = this.shadow == null ? 0 : this.shadow.getRevision();
+        LOGGER.info("[batch-click] 发送 syncId={} slot={} button={} action={} revision={}",
+                this.syncId, slot, button, action, revision);
         client.getNetworkHandler().sendPacket(new ClickSlotC2SPacket(
                 this.syncId,
                 revision,

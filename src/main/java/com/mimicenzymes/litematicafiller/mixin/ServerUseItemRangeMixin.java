@@ -3,13 +3,16 @@ package com.mimicenzymes.litematicafiller.mixin;
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.tool.BatchToolState;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * 「批量工具」的**远距离开箱 / 远距离点击**（Ray 2026-11-06 需求：二改能清完一整排，我们也要能）。
@@ -77,5 +80,22 @@ public abstract class ServerUseItemRangeMixin {
             LOGGER.info("[batch-farreach] 放行远距离容器点击 menu={}", handler.getType());
         }
         return true;
+    }
+
+    /** 【诊断】批量运行期间把每条点击包原样打出来，用来判断"包没到 / syncId 不匹配 / 被 canUse 拦"。 */
+    @Inject(method = "onClickSlot", at = @At("HEAD"))
+    private void litematicaContainerFiller$logBatchClick(ClickSlotC2SPacket packet, CallbackInfo ci) {
+        if (!BatchToolState.isActive()) {
+            return;
+        }
+        ServerPlayNetworkHandler self = (ServerPlayNetworkHandler) (Object) this;
+        ServerPlayerEntity player = self.player;
+        if (player == null) {
+            return;
+        }
+        ScreenHandler current = player.currentScreenHandler;
+        LOGGER.info("[batch-click-srv] 收到 syncId={} slot={} button={} action={} 当前菜单={} canUse={}",
+                packet.getSyncId(), packet.getSlot(), packet.getButton(), packet.getActionType(),
+                current.syncId, current.canUse(player));
     }
 }
