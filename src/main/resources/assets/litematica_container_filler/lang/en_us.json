@@ -405,7 +405,7 @@
   "litematica_container_filler.config.name.batchToolEnabled": "Enable Batch Tools",
   "litematica_container_filler.config.comment.batchToolEnabled": "Master switch for the batch tool. When enabled, the Batch Tool trigger hotkey runs a batch container sync over the Litematica selection (or the looked-at container).\nThe batch tool uses the data channel: it never opens a container screen, never grabs the mouse, and shares no state with Container Tools.",
   "litematica_container_filler.config.name.batchToolMode": "Batch Action",
-  "litematica_container_filler.config.comment.batchToolMode": "Clear container: process the contents according to Clear Container Output.\nFill container: fill each container from its own schematic template (data-channel version, coming in a later build).",
+  "litematica_container_filler.config.comment.batchToolMode": "Clear container: process the contents according to Clear Container Output.\nFill container: fill each container from its own schematic template (extras are dropped, missing items are pulled from the inventory).",
   "litematica_container_filler.config.name.batchToolRange": "Batch Range",
   "litematica_container_filler.config.comment.batchToolRange": "Litematica selection: process every container inside the current selection (nearest first).\nLooked-at container: process only the container under the crosshair (quick verification).",
   "litematica_container_filler.config.name.batchToolFarReach": "Batch Far Reach",
@@ -430,5 +430,7 @@
   "litematica_container_filler.message.batch_tool_content_timeout": "§c[Batch Tools] No container contents received, skipping.",
   "litematica_container_filler.message.batch_tool_progress": "§b[Batch Tools] %s/%s",
   "litematica_container_filler.message.batch_tool_done": "§a[Batch Tools] Done: %s containers (skipped %s).",
-  "litematica_container_filler.message.batch_tool_all_failed": "§c[Batch Tools] Three containers in a row could not be opened; aborted. Check Batch Far Reach or stand closer."
+  "litematica_container_filler.message.batch_tool_all_failed": "§c[Batch Tools] Three containers in a row could not be opened; aborted. Check Batch Far Reach or stand closer.",
+  "litematica_container_filler.message.batch_tool_no_schematic": "§e[Batch Tools] The schematic has no contents for this container, skipping.",
+  "litematica_container_filler.message.batch_tool_fill_missing": "§e[Batch Tools] Not enough materials in the inventory; %s items short for this container."
 }

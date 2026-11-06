@@ -3,6 +3,7 @@ package com.mimicenzymes.litematicafiller.tool;
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.core.AutoFillerStateMachine;
 import com.mimicenzymes.litematicafiller.core.InteractionTargeting;
+import com.mimicenzymes.litematicafiller.core.ItemMatcher;
 import com.mimicenzymes.litematicafiller.core.LitematicaContainerReader;
 import com.mimicenzymes.litematicafiller.core.RealContainerCache;
 import com.mimicenzymes.litematicafiller.filter.ContainerBlockFilter;
@@ -30,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,18 +72,25 @@ public final class BatchToolController {
     private static final int CLOSE_TIMEOUT_TICKS = 10;
     /** 两格之间额外等待的 tick 数（关箱确认后再等，避免"关箱顶掉刚开的菜单"）。 */
     private static final int CONTAINER_GAP_TICKS = 2;
+    /** 每 tick 最多发多少个点击包（大箱子一次几百个会顶出服务端 tick）。 */
+    private static final int MAX_CLICKS_PER_TICK = 64;
 
     private enum Phase {
         IDLE,
         WAIT_OPEN,
         WAIT_CONTENT,
         ACT,
+        EXECUTE,
         SETTLE,
         WAIT_CLOSE,
         GAP
     }
 
+    private record ClickOp(int slot, int button, SlotActionType action) {
+    }
+
     private final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+    private final ArrayDeque<ClickOp> clickPlan = new ArrayDeque<>();
 
     private Phase phase = Phase.IDLE;
     private BatchToolMode mode = BatchToolMode.CLEAR;
@@ -98,6 +107,8 @@ public final class BatchToolController {
     private int done;
     private int skipped;
     private int consecutiveSkips;
+    private int fillMissing;
+    private boolean fillNoData;
     /** 收尾后保留影子菜单的 tick 数（等迟到的关箱/背包同步包；之后清掉避免 syncId 撞车）。 */
     private int lingerTicks;
 
@@ -151,11 +162,6 @@ public final class BatchToolController {
         }
 
         BatchToolMode selected = getSelectedMode();
-        if (selected == BatchToolMode.FILL && !isFillImplemented()) {
-            message(client, "litematica_container_filler.message.batch_tool_fill_not_ready");
-            return;
-        }
-
         List<BlockPos> targets = collectTargets(client);
         if (targets.isEmpty()) {
             return;
@@ -219,6 +225,7 @@ public final class BatchToolController {
             }
             this.syncId = packetSyncId;
             this.contentReady = false;
+            this.closeSeen = false;
             this.waited = 0;
             this.phase = Phase.WAIT_CONTENT;
             LOGGER.info("[batch] 接管界面 syncId={} type={} pos={}", packetSyncId, type, this.current);
@@ -320,7 +327,17 @@ public final class BatchToolController {
             case ACT -> {
                 performAction(client);
                 this.waited = 0;
-                this.phase = Phase.SETTLE;
+            }
+            case EXECUTE -> {
+                int budget = MAX_CLICKS_PER_TICK;
+                while (budget-- > 0 && !this.clickPlan.isEmpty()) {
+                    ClickOp op = this.clickPlan.poll();
+                    sendClick(op.slot(), op.button(), op.action());
+                }
+                if (this.clickPlan.isEmpty()) {
+                    this.waited = 0;
+                    this.phase = Phase.SETTLE;
+                }
             }
             case SETTLE -> {
                 if (++this.waited >= SETTLE_TICKS) {
@@ -390,12 +407,15 @@ public final class BatchToolController {
         }
         this.current = pos.toImmutable();
         this.waited = 0;
-        this.syncId = -1;
-        this.shadow = null;
+        // ⚠️ 故意不清 shadow / syncId：上一格迟到的背包同步包还要灌进玩家背包；
+        //    新的 OpenScreen 到达时 handleOpenScreen 会整体替换。
         this.contentReady = false;
         this.closeSeen = false;
         this.secondPass = false;
         this.clearPass = 1;
+        this.fillMissing = 0;
+        this.fillNoData = false;
+        this.clickPlan.clear();
         this.phase = Phase.WAIT_OPEN;
 
         BlockHitResult hit = InteractionTargeting.createBlockHitResult(client, this.current);
@@ -414,8 +434,17 @@ public final class BatchToolController {
     }
 
     private void skip(MinecraftClient client, String messageKey) {
+        skip(client, messageKey, true);
+    }
+
+    /**
+     * @param failure true = 计入"连续打不开"（服务端拒绝的判据）；false = 正常跳过（例如投影里没数据）
+     */
+    private void skip(MinecraftClient client, String messageKey, boolean failure) {
         this.skipped++;
-        this.consecutiveSkips++;
+        if (failure) {
+            this.consecutiveSkips++;
+        }
         LOGGER.info("[batch] 跳过 pos={} 原因={} syncId={} 影子菜单={}",
                 this.current, messageKey, this.syncId, this.shadow == null ? "无" : "有");
         sendClose(client);
@@ -424,7 +453,7 @@ public final class BatchToolController {
         this.current = null;
 
         // 一个都没成功却连着 3 格打不开 ⇒ 多半是服务端在拒绝（远距离开箱没生效 / 没装本模组）。
-        if (this.done == 0 && this.consecutiveSkips >= 3) {
+        if (failure && this.done == 0 && this.consecutiveSkips >= 3) {
             LOGGER.info("[batch] 连续 {} 格打不开，中止（done=0）", this.consecutiveSkips);
             resetState();
             message(client, "litematica_container_filler.message.batch_tool_all_failed");
@@ -465,6 +494,9 @@ public final class BatchToolController {
         this.closeSeen = false;
         this.secondPass = false;
         this.clearPass = 1;
+        this.fillMissing = 0;
+        this.fillNoData = false;
+        this.clickPlan.clear();
         this.lingerTicks = 20;
         // shadow / syncId 故意保留：关箱包可能晚到一两 tick，还要靠它们吃掉
         // CloseScreen 并同步玩家背包；lingerTicks 到点或下一次 openNext 会整体替换。
@@ -491,19 +523,32 @@ public final class BatchToolController {
     }
 
     // ------------------------------------------------------------------
-    // 具体动作（1.12.1 只做清空；1.12.3 再补填满）
+    // 具体动作：先生成点击计划，再按每 tick 预算发出去
     // ------------------------------------------------------------------
 
     private void performAction(MinecraftClient client) {
+        this.clickPlan.clear();
         if (this.mode == BatchToolMode.FILL) {
-            // 1.12.3 实现：按每格自己的投影模板填满。
-            message(client, "litematica_container_filler.message.batch_tool_fill_not_ready");
+            buildFillPlan(client);
+        } else {
+            buildClearPlan(client);
+        }
+
+        if (this.fillNoData) {
+            // 投影里没有这个容器的内容数据：跳过（不算失败，不触发连续失败中止）。
+            this.fillNoData = false;
+            skip(client, "litematica_container_filler.message.batch_tool_no_schematic", false);
             return;
         }
-        performClear(client);
+        if (this.clickPlan.isEmpty()) {
+            this.waited = 0;
+            this.phase = Phase.SETTLE;
+            return;
+        }
+        this.phase = Phase.EXECUTE;
     }
 
-    private void performClear(MinecraftClient client) {
+    private void buildClearPlan(MinecraftClient client) {
         ContainerClearOutputMode output = getClearOutputMode();
         boolean toInventory = output != ContainerClearOutputMode.DROP;
         boolean secondRound = this.clearPass >= 2;
@@ -515,9 +560,9 @@ public final class BatchToolController {
             }
             if (toInventory && !secondRound) {
                 // 先尝试整组塞进玩家背包；背包满的会留在容器里，第二遍再丢。
-                sendClick(slot.id, 0, SlotActionType.QUICK_MOVE);
+                this.clickPlan.add(new ClickOp(slot.id, 0, SlotActionType.QUICK_MOVE));
             } else {
-                sendClick(slot.id, 1, SlotActionType.THROW);
+                this.clickPlan.add(new ClickOp(slot.id, 1, SlotActionType.THROW));
             }
             clicks++;
         }
@@ -525,8 +570,148 @@ public final class BatchToolController {
         if (output == ContainerClearOutputMode.INVENTORY_THEN_DROP && !secondRound) {
             this.secondPass = true;
         }
-        LOGGER.info("[batch] 清空 pos={} 输出={} 第{}遍 点击 {} 次",
+        LOGGER.info("[batch] 清空 pos={} 输出={} 第{}遍 计划点击 {} 次",
                 this.current, output.getStringValue(), this.clearPass, clicks);
+    }
+
+    /**
+     * 「填满容器」：按**这一格自己的投影模板**（{@code LitematicaContainerReader.getRequiredItems}）
+     * 把容器对齐到模板——多出来的丢掉、少的从玩家背包搬进来。
+     *
+     * <p>点击计划用一个**虚拟背包模型**逐步推演（服务端会按同样顺序执行这些包），
+     * 所以能精确到"某槽放 10 个"而不是只会整组塞。规则：</p>
+     * <ul>
+     *   <li>整组够用（手里 ≤ 还差的数量）⇒ 左键一次整组放入；</li>
+     *   <li>只需要一部分 ⇒ 右键一个一个放（NBT 模板里不满一组的情况很少）；</li>
+     *   <li>手里剩的放回来源槽，保证下一次拾取时手上是空的。</li>
+     * </ul>
+     */
+    private void buildFillPlan(MinecraftClient client) {
+        if (this.shadow == null || this.current == null) {
+            return;
+        }
+        Map<Integer, ItemStack> required;
+        try {
+            required = LitematicaContainerReader.getRequiredItems(this.current, client.world.getRegistryManager());
+        } catch (Throwable t) {
+            LOGGER.warn("[batch] 读投影容器数据失败 pos={}", this.current, t);
+            required = Map.of();
+        }
+        if (required.isEmpty()) {
+            this.fillNoData = true;
+            return;
+        }
+
+        Map<Integer, ItemStack> model = new HashMap<>();
+        List<Integer> playerSlots = new ArrayList<>();
+        for (Slot slot : this.shadow.slots) {
+            model.put(slot.id, slot.getStack().copy());
+            if (slot.inventory == client.player.getInventory()) {
+                playerSlots.add(slot.id);
+            }
+        }
+
+        ItemStack cursor = ItemStack.EMPTY;
+        int lastSource = -1;
+        int missing = 0;
+        int planned = 0;
+
+        for (Slot slot : containerSlots(client)) {
+            ItemStack target = required.getOrDefault(slot.getIndex(), ItemStack.EMPTY);
+            ItemStack current = model.getOrDefault(slot.id, ItemStack.EMPTY);
+
+            if (target.isEmpty()) {
+                if (!current.isEmpty()) {
+                    this.clickPlan.add(new ClickOp(slot.id, 1, SlotActionType.THROW));
+                    model.put(slot.id, ItemStack.EMPTY);
+                    planned++;
+                }
+                continue;
+            }
+            if (ItemMatcher.isSameItem(current, target) && current.getCount() == target.getCount()) {
+                continue;
+            }
+            if (!current.isEmpty()) {
+                this.clickPlan.add(new ClickOp(slot.id, 1, SlotActionType.THROW));
+                model.put(slot.id, ItemStack.EMPTY);
+                planned++;
+            }
+            if (!slot.canInsert(target)) {
+                // 目标槽不收这种物品（熔炉燃料槽 / 输出槽等）⇒ 记缺料，别硬塞。
+                missing += target.getCount();
+                continue;
+            }
+
+            int placed = 0;
+            while (placed < target.getCount()) {
+                if (cursor.isEmpty()) {
+                    int src = findPlayerSlotWithItem(model, playerSlots, target);
+                    if (src < 0) {
+                        missing += target.getCount() - placed;
+                        break;
+                    }
+                    cursor = model.get(src).copy();
+                    model.put(src, ItemStack.EMPTY);
+                    lastSource = src;
+                    this.clickPlan.add(new ClickOp(src, 0, SlotActionType.PICKUP));
+                    planned++;
+                }
+                int need = target.getCount() - placed;
+                if (cursor.getCount() <= need) {
+                    this.clickPlan.add(new ClickOp(slot.id, 0, SlotActionType.PICKUP));
+                    placed += cursor.getCount();
+                    cursor = ItemStack.EMPTY;
+                } else {
+                    this.clickPlan.add(new ClickOp(slot.id, 1, SlotActionType.PICKUP));
+                    placed++;
+                    cursor.decrement(1);
+                    if (cursor.isEmpty()) {
+                        cursor = ItemStack.EMPTY;
+                    }
+                }
+                planned++;
+            }
+            if (!cursor.isEmpty()) {
+                int back = lastSource >= 0 ? lastSource : findEmptyPlayerSlot(model, playerSlots);
+                if (back >= 0) {
+                    this.clickPlan.add(new ClickOp(back, 0, SlotActionType.PICKUP));
+                    model.put(back, cursor.copy());
+                    planned++;
+                }
+                cursor = ItemStack.EMPTY;
+            }
+            if (placed > 0) {
+                ItemStack placedStack = target.copy();
+                placedStack.setCount(placed);
+                model.put(slot.id, placedStack);
+            }
+        }
+
+        this.fillMissing = missing;
+        LOGGER.info("[batch] 填满 pos={} 模板槽 {} 个，计划点击 {} 次，缺料 {}",
+                this.current, required.size(), planned, missing);
+        if (missing > 0) {
+            message(client, "litematica_container_filler.message.batch_tool_fill_missing", missing);
+        }
+    }
+
+    private int findPlayerSlotWithItem(Map<Integer, ItemStack> model, List<Integer> playerSlots, ItemStack target) {
+        for (int slotId : playerSlots) {
+            ItemStack stack = model.getOrDefault(slotId, ItemStack.EMPTY);
+            if (!stack.isEmpty() && ItemMatcher.isSameItem(stack, target)) {
+                return slotId;
+            }
+        }
+        return -1;
+    }
+
+    private int findEmptyPlayerSlot(Map<Integer, ItemStack> model, List<Integer> playerSlots) {
+        for (int slotId : playerSlots) {
+            if (model.getOrDefault(slotId, ItemStack.EMPTY).isEmpty()) {
+                return slotId;
+            }
+        }
+        return -1;
     }
 
     private void sendClick(int slot, int button, SlotActionType action) {
@@ -631,10 +816,6 @@ public final class BatchToolController {
             return selected;
         }
         return ContainerClearOutputMode.DROP;
-    }
-
-    private boolean isFillImplemented() {
-        return false;
     }
 
     private void message(MinecraftClient client, String key, Object... args) {

@@ -407,7 +407,7 @@
   "litematica_container_filler.config.name.batchToolEnabled": "启用批量工具",
   "litematica_container_filler.config.comment.batchToolEnabled": "批量工具的总开关。开启后，按「批量工具触发」热键对投影选区（或准星容器）执行批量容器同步。\n批量工具走数据通道：不会打开容器界面、不抢鼠标，也不和「容器工具」共享状态。",
   "litematica_container_filler.config.name.batchToolMode": "批量工具动作",
-  "litematica_container_filler.config.comment.batchToolMode": "清空容器：把容器里的物品按「清空容器输出」处理。\n填满容器：按每格自己的投影模板填满（数据通道版，后续版本提供）。",
+  "litematica_container_filler.config.comment.batchToolMode": "清空容器：把容器里的物品按「清空容器输出」处理。\n填满容器：按每格自己的投影模板填满（多出来的丢掉、少的从背包搬进来）。",
   "litematica_container_filler.config.name.batchToolRange": "批量工具范围",
   "litematica_container_filler.config.comment.batchToolRange": "投影选区：处理 Litematica 当前选区框到的所有容器（就近优先）。\n准星单容器：只处理准星指向的那一个容器（用来快速验证）。",
   "litematica_container_filler.config.name.batchToolFarReach": "批量工具远距离开箱",
@@ -432,5 +432,7 @@
   "litematica_container_filler.message.batch_tool_content_timeout": "§c[批量工具] 没收到容器内容，跳过。",
   "litematica_container_filler.message.batch_tool_progress": "§b[批量工具] %s/%s",
   "litematica_container_filler.message.batch_tool_done": "§a[批量工具] 完成：%s 个容器（跳过 %s）。",
-  "litematica_container_filler.message.batch_tool_all_failed": "§c[批量工具] 连续 3 格都打不开，已中止。检查「批量工具远距离开箱」或站近一点。"
+  "litematica_container_filler.message.batch_tool_all_failed": "§c[批量工具] 连续 3 格都打不开，已中止。检查「批量工具远距离开箱」或站近一点。",
+  "litematica_container_filler.message.batch_tool_no_schematic": "§e[批量工具] 投影里没有这个容器的内容数据，跳过。",
+  "litematica_container_filler.message.batch_tool_fill_missing": "§e[批量工具] 背包材料不够，这一格少填了 %s 个。"
 }
