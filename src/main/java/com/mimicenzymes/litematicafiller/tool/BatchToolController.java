@@ -66,8 +66,6 @@ public final class BatchToolController {
     private static final int OPEN_TIMEOUT_TICKS = 20;
     /** OpenScreen 之后等 InventoryS2CPacket 的上限（tick）。 */
     private static final int CONTENT_TIMEOUT_TICKS = 20;
-    /** 点击包发完后等服务器同步的 tick 数（清空丢地/进背包 1 tick 就够）。 */
-    private static final int SETTLE_TICKS = 1;
     /** 「放入背包+丢出」第二遍前多等一会儿，让服务端把背包同步回来。 */
     private static final int SETTLE_TICKS_SECOND_PASS = 2;
     /** 每 tick 最多发多少个点击包（大箱子一次几百个会顶出服务端 tick）。 */
@@ -104,6 +102,7 @@ public final class BatchToolController {
     private int consecutiveSkips;
     private int fillMissing;
     private boolean fillNoData;
+    private Map<Integer, ItemStack> fillTargets = Map.of();
     /** 收尾后保留影子菜单的 tick 数（等迟到的关箱/背包同步包；之后清掉避免 syncId 撞车）。 */
     private int lingerTicks;
 
@@ -326,15 +325,19 @@ public final class BatchToolController {
                     sendClick(op.slot(), op.button(), op.action());
                 }
                 if (this.clickPlan.isEmpty()) {
-                    this.waited = 0;
-                    this.phase = Phase.SETTLE;
+                    if (this.secondPass) {
+                        // 「放入背包+丢出」要等服务端同步回来，才知道还剩什么。
+                        this.waited = 0;
+                        this.phase = Phase.SETTLE;
+                    } else {
+                        // 包按序处理：点击一定先于下一次右键生效 ⇒ 同一 tick 直接开下一格，省掉 1 tick。
+                        finishCurrent(client);
+                    }
                 }
             }
             case SETTLE -> {
-                // 数据通道下所有包都在同一条连接上按序到达：点击包一定先于下一次右键包被服务端处理，
-                // 所以**不需要每格显式关箱**——服务端开下一格时自己会 closeHandledScreen() 关上一格。
-                int settle = this.secondPass ? SETTLE_TICKS_SECOND_PASS : SETTLE_TICKS;
-                if (++this.waited >= settle) {
+                // 只有「放入背包+丢出」会进这个阶段：要等服务端把背包同步回来，才知道还剩什么。
+                if (++this.waited >= SETTLE_TICKS_SECOND_PASS) {
                     if (this.secondPass && hasContainerItems(client)) {
                         this.secondPass = false;
                         this.clearPass = 2;
@@ -400,6 +403,7 @@ public final class BatchToolController {
         this.clearPass = 1;
         this.fillMissing = 0;
         this.fillNoData = false;
+        this.fillTargets = Map.of();
         this.clickPlan.clear();
         this.phase = Phase.WAIT_OPEN;
 
@@ -494,6 +498,7 @@ public final class BatchToolController {
         this.clearPass = 1;
         this.fillMissing = 0;
         this.fillNoData = false;
+        this.fillTargets = Map.of();
         this.clickPlan.clear();
         this.lingerTicks = 20;
         // 服务端 mixin（远距离放行 / 超距不自动关箱）靠这个开关判断"是不是批量工具在跑"。
@@ -541,8 +546,12 @@ public final class BatchToolController {
             return;
         }
         if (this.clickPlan.isEmpty()) {
-            this.waited = 0;
-            this.phase = Phase.SETTLE;
+            if (this.secondPass) {
+                this.waited = 0;
+                this.phase = Phase.SETTLE;
+            } else {
+                finishCurrent(client);
+            }
             return;
         }
         this.phase = Phase.EXECUTE;
@@ -558,8 +567,6 @@ public final class BatchToolController {
             if (!slot.hasStack()) {
                 continue;
             }
-            LOGGER.info("[batch] 待清空槽 slot.id={} index={} item={} count={}",
-                    slot.id, slot.getIndex(), slot.getStack().getItem(), slot.getStack().getCount());
             if (toInventory && !secondRound) {
                 // 先尝试整组塞进玩家背包；背包满的会留在容器里，第二遍再丢。
                 this.clickPlan.add(new ClickOp(slot.id, 0, SlotActionType.QUICK_MOVE));
@@ -612,6 +619,7 @@ public final class BatchToolController {
                 return;
             }
         }
+        this.fillTargets = required;
 
         Map<Integer, ItemStack> model = new HashMap<>();
         List<Integer> playerSlots = new ArrayList<>();
@@ -747,8 +755,6 @@ public final class BatchToolController {
             return;
         }
         int revision = this.shadow == null ? 0 : this.shadow.getRevision();
-        LOGGER.info("[batch-click] 发送 syncId={} slot={} button={} action={} revision={}",
-                this.syncId, slot, button, action, revision);
         client.getNetworkHandler().sendPacket(new ClickSlotC2SPacket(
                 this.syncId,
                 revision,
@@ -791,13 +797,13 @@ public final class BatchToolController {
         if (this.current == null) {
             return;
         }
-        Map<Integer, ItemStack> items = new LinkedHashMap<>();
-        for (Slot slot : containerSlots(client)) {
-            if (!slot.getStack().isEmpty()) {
-                items.put(slot.getIndex(), slot.getStack().copy());
-            }
+        if (this.mode == BatchToolMode.FILL) {
+            // 填满：计划执行完就该等于模板（缺料时差一点，下次扫描会修正）。
+            RealContainerCache.put(this.current, new LinkedHashMap<>(this.fillTargets));
+            return;
         }
-        RealContainerCache.put(this.current, items);
+        // 清空：点击已按序发出，容器应为空（「放入背包」在背包满时可能剩一点，下次扫描会修正）。
+        RealContainerCache.put(this.current, Map.of());
     }
 
     // ------------------------------------------------------------------
