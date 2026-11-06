@@ -50,6 +50,7 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
 
             if (!com.mimicenzymes.litematicafiller.config.Configs.ENABLE_MOD.getBooleanValue()) {
                 stopActiveWorkForDisabledMod(client);
+                com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance().stopForDisabledMod(client);
                 ClickPacketRateLimiter.reset();
                 updateFillProtectionSnapshot(client);
                 return;
@@ -80,6 +81,8 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
                 if (toolActive) {
                     tool.tick(client);
                 }
+                // 「批量工具」独立状态机（数据通道，不建界面）；与容器工具零共享状态。
+                com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance().tick(client);
                 if (handleClickPacketOverflow(client, filler, tool)) {
                     updateFillProtectionSnapshot(client);
                     return;
@@ -101,6 +104,9 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
                 } else {
                     workerTickTimer = 0;
                 }
+            } else {
+                // 离开世界 / 还没进世界：批量工具不能跨世界继续跑。
+                com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance().stopForDisabledMod(client);
             }
         });
 

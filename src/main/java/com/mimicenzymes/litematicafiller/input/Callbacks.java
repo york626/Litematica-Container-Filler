@@ -102,6 +102,16 @@ public class Callbacks implements IHotkeyCallback {
             return true;
         }
 
+        if (key == Hotkeys.BATCH_TOOL_TRIGGER.getKeybind()) {
+            com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance().toggle(mc);
+            return true;
+        }
+
+        if (key == Hotkeys.BATCH_TOOL_CANCEL.getKeybind()) {
+            com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance().cancel(mc);
+            return true;
+        }
+
         return false;
     }
 

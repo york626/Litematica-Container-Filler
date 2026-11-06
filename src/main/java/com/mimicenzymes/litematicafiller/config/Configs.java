@@ -8,6 +8,8 @@ import com.mimicenzymes.litematicafiller.filter.ContainerFilterMode;
 import com.mimicenzymes.litematicafiller.filter.ContainerFilterScope;
 import com.mimicenzymes.litematicafiller.gui.GuiConfigs;
 import com.mimicenzymes.litematicafiller.input.InputHandler;
+import com.mimicenzymes.litematicafiller.tool.BatchToolMode;
+import com.mimicenzymes.litematicafiller.tool.BatchToolRange;
 import com.mimicenzymes.litematicafiller.tool.ContainerClearOutputMode;
 import com.mimicenzymes.litematicafiller.tool.ContainerToolMode;
 import fi.dy.masa.malilib.config.ConfigManager;
@@ -103,6 +105,13 @@ public class Configs implements IConfigHandler {
     public static final ConfigBooleanHotkeyed TOOL_FILL_FULL_MODE    = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.toolFillFullMode", false, "", "litematica_container_filler.config.comment.toolFillFullMode");
     public static final ConfigBooleanHotkeyed TOOL_COPY_MODE         = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.toolCopyMode", false, "", "litematica_container_filler.config.comment.toolCopyMode");
 
+    //批量工具设置（独立于容器工具：数据通道，不建界面）
+    public static final ConfigBoolean BATCH_TOOL_ENABLED             = new ConfigBoolean("litematica_container_filler.config.name.batchToolEnabled", false, "litematica_container_filler.config.comment.batchToolEnabled");
+    public static final ConfigOptionList BATCH_TOOL_MODE             = new ConfigOptionList("litematica_container_filler.config.name.batchToolMode", BatchToolMode.CLEAR, "litematica_container_filler.config.comment.batchToolMode");
+    public static final ConfigOptionList BATCH_TOOL_RANGE            = new ConfigOptionList("litematica_container_filler.config.name.batchToolRange", BatchToolRange.SELECTION, "litematica_container_filler.config.comment.batchToolRange");
+    /** 服务端放行"容器方块实体"的远距离右键（只对容器生效，普通方块仍按原版距离）。 */
+    public static final ConfigBoolean BATCH_TOOL_FAR_REACH           = new ConfigBoolean("litematica_container_filler.config.name.batchToolFarReach", true, "litematica_container_filler.config.comment.batchToolFarReach");
+
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
     public static final ConfigBooleanHotkeyed HIGHLIGHT_XRAY        = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightXray", false, "", "litematica_container_filler.config.comment.highlightXray");
@@ -147,6 +156,7 @@ public class Configs implements IConfigHandler {
     public static final List<IConfigBase> LOGISTICS_OPTIONS;
     public static final List<IConfigBase> FILTER_OPTIONS;
     public static final List<IConfigBase> TOOL_OPTIONS;
+    public static final List<IConfigBase> BATCH_OPTIONS;
     public static final List<IConfigBase> RENDER_OPTIONS;
     public static final List<ConfigBooleanHotkeyed> BOOLEAN_HOTKEY_OPTIONS;
     private static final List<IConfigBase> LEGACY_OPTIONS;
@@ -216,6 +226,13 @@ public class Configs implements IConfigHandler {
                 TOOL_HUD_FRAME_RATE
         );
 
+        BATCH_OPTIONS = ImmutableList.of(
+                BATCH_TOOL_ENABLED,
+                BATCH_TOOL_MODE,
+                BATCH_TOOL_RANGE,
+                BATCH_TOOL_FAR_REACH
+        );
+
         RENDER_OPTIONS = ImmutableList.of(
                 HIGHLIGHT_CONTAINERS,
                 HIGHLIGHT_XRAY,
@@ -283,6 +300,7 @@ public class Configs implements IConfigHandler {
         builder.addAll(LOGISTICS_OPTIONS);
         builder.addAll(FILTER_OPTIONS);
         builder.addAll(TOOL_OPTIONS);
+        builder.addAll(BATCH_OPTIONS);
         builder.addAll(RENDER_OPTIONS);
         OPTIONS = builder.build();
     }
