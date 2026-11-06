@@ -47,6 +47,16 @@ public final class BatchClearController {
     private int waited;
     private int previousSyncId = -1;
     private int dropped;
+    /** ★ 1.11.2-Ray：界面接管计数（诊断用；Mixin 里不能放非 private static 方法，所以放这里）。 */
+    private static int screenAttachCount;
+
+    public static void noteScreenAttached() {
+        screenAttachCount++;
+    }
+
+    public static int screenAttachCount() {
+        return screenAttachCount;
+    }
 
     private BatchClearController() {
     }
@@ -138,7 +148,7 @@ public final class BatchClearController {
                             this.current,
                             handler.getClass().getSimpleName(),
                             this.previousSyncId,
-                            com.mimicenzymes.litematicafiller.mixin.BatchClearScreenMixin.attachedCount());
+                            screenAttachCount());
                     skipToNext(client);
                 }
             }
