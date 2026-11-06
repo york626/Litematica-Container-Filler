@@ -94,8 +94,30 @@ public abstract class ServerUseItemRangeMixin {
             return;
         }
         ScreenHandler current = player.currentScreenHandler;
-        LOGGER.info("[batch-click-srv] 收到 syncId={} slot={} button={} action={} 当前菜单={} canUse={}",
+        String slotStack = "?";
+        if (packet.getSlot() >= 0 && packet.getSlot() < current.slots.size()) {
+            slotStack = String.valueOf(current.slots.get(packet.getSlot()).getStack());
+        }
+        LOGGER.info("[batch-click-srv] 收到 syncId={} slot={} button={} action={} 当前菜单={} canUse={} 光标={} 槽内={}",
                 packet.getSyncId(), packet.getSlot(), packet.getButton(), packet.getActionType(),
-                current.syncId, current.canUse(player));
+                current.syncId, current.canUse(player), current.getCursorStack(), slotStack);
+    }
+
+    /** 【诊断】点击处理完之后再看一眼那个槽，确认到底有没有被移走。 */
+    @Inject(method = "onClickSlot", at = @At("RETURN"))
+    private void litematicaContainerFiller$logBatchClickResult(ClickSlotC2SPacket packet, CallbackInfo ci) {
+        if (!BatchToolState.isActive()) {
+            return;
+        }
+        ServerPlayNetworkHandler self = (ServerPlayNetworkHandler) (Object) this;
+        ServerPlayerEntity player = self.player;
+        if (player == null) {
+            return;
+        }
+        ScreenHandler current = player.currentScreenHandler;
+        if (packet.getSlot() >= 0 && packet.getSlot() < current.slots.size()) {
+            LOGGER.info("[batch-click-srv] 处理完 slot={} 现在={} 光标={}",
+                    packet.getSlot(), current.slots.get(packet.getSlot()).getStack(), current.getCursorStack());
+        }
     }
 }
