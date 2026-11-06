@@ -21,6 +21,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(ClientPlayNetworkHandler.class)
 public class BatchClearScreenMixin {
+    private static int attached = 0;
+
+    public static int attachedCount() {
+        return attached;
+    }
+
     @Inject(method = "onOpenScreen", at = @At("HEAD"), cancellable = true)
     private void lcf$attachMenuWithoutScreen(OpenScreenS2CPacket packet, CallbackInfo ci) {
         if (!BatchClearController.getInstance().isRunning()) {
@@ -34,6 +40,7 @@ public class BatchClearScreenMixin {
                 .create(packet.getSyncId(), client.player.getInventory());
         if (handler != null) {
             client.player.currentScreenHandler = handler;
+            attached++;
         }
         ci.cancel();
     }

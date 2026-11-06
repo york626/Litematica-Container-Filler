@@ -69,6 +69,14 @@ public final class BatchClearController {
         if (client.player == null || client.world == null) {
             return;
         }
+        // ★ 1.11.1-Ray（Ray 2026-11-06）：批量**沿用容器工具选中的模式**（不再单独设模式页）；
+        //   批量快捷键只负责"对选区跑这个模式"。目前批量只实现了清空，其余模式先明确提示。
+        Object selectedMode = Configs.CONTAINER_TOOL_MODE.getOptionListValue();
+        if (!(selectedMode instanceof com.mimicenzymes.litematicafiller.tool.ContainerToolMode toolMode)
+                || toolMode != com.mimicenzymes.litematicafiller.tool.ContainerToolMode.CLEAR) {
+            message(client, "§e[批量] 现在只支持「清空容器」模式（在工具页把模式切成清空）。");
+            return;
+        }
         int built = this.queue.build(client);
         if (built <= 0) {
             message(client, "§e[批量清空] 投影选区里没有容器（先框选）。");
@@ -125,6 +133,12 @@ public final class BatchClearController {
                 }
                 if (++this.waited > OPEN_TIMEOUT_TICKS) {
                     message(client, "§c[批量清空] 打不开 " + this.current + "，跳过");
+                    org.slf4j.LoggerFactory.getLogger("litematica_container_filler").info(
+                            "[batch] 打不开 {} handler={} 上次syncId={} 已接管界面={}",
+                            this.current,
+                            handler.getClass().getSimpleName(),
+                            this.previousSyncId,
+                            com.mimicenzymes.litematicafiller.mixin.BatchClearScreenMixin.attachedCount());
                     skipToNext(client);
                 }
             }
