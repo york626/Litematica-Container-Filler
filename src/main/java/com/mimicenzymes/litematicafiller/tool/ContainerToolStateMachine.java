@@ -98,6 +98,10 @@ public class ContainerToolStateMachine {
     /** ★ 1.9.0-Ray「批量容器操作」：投影里的容器队列（见仓库根 `批量容器操作-设计.md`）。 */
     private final ContainerBatchQueue batch = new ContainerBatchQueue();
     private boolean batchActive = false;
+    /** ★ 1.9.4-Ray 计时探针：当前这一格从"开始开箱/开好箱"起的 tick 基准。 */
+    private long batchStepTick = 0L;
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
 
     private final IShulkerExtractor shulkerExtractor;
 
@@ -294,6 +298,11 @@ public class ContainerToolStateMachine {
                     openOrTimeout(client, currentPos);
                     return;
                 }
+                // ★ 1.9.4-Ray 计时探针：开箱成功（看"开箱"这一段耗时）
+                LOGGER.info("[batchtool] opened {} 用时 {} tick（批量 {} / {}）",
+                        currentPos, client.world.getTime() - batchStepTick,
+                        batch.doneCount() + 1, batch.total());
+                batchStepTick = client.world.getTime();
 
                 phase = Phase.PROCESSING;
             }
@@ -1557,6 +1566,12 @@ public class ContainerToolStateMachine {
     }
 
     private void finish(MinecraftClient client) {
+        if (this.batchActive) {
+            // ★ 1.9.4-Ray 计时探针：这一格从"开好箱"到"处理完"用了多少 tick
+            long dt = client.world == null ? -1L : client.world.getTime() - this.batchStepTick;
+            LOGGER.info("[batchtool] done {} 处理用时 {} tick（批量 {} / {}）",
+                    this.currentPos, dt, this.batch.doneCount() + 1, this.batch.total());
+        }
         if (continueBatch(client, false)) {
             return;
         }
@@ -1591,6 +1606,10 @@ public class ContainerToolStateMachine {
         this.phase = Phase.OPENING_TARGET;
         this.uiWaitTicks = 0;
         this.openedByTool = false;
+        // ★ 1.9.4-Ray 计时探针：这一格"开始开箱"的 tick 基准（下次 finished 时会打印耗时）
+        this.batchStepTick = client.world == null ? 0L : client.world.getTime();
+        LOGGER.info("[batchtool] start {} 开箱（批量 {} / {}）", next,
+                this.batch.doneCount() + 1, this.batch.total());
         sendProgress(client, "litematica_container_filler.message.tool_batch_progress",
                 this.batch.doneCount() + 1, this.batch.total());
         return true;
