@@ -7,7 +7,10 @@ import net.minecraft.screen.ScreenHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * 「批量工具」远距离操作的**第三道闸**（Ray 2026-11-06 实测：远处容器"摸不到、扔不出来"的真凶）。
@@ -49,5 +52,35 @@ public abstract class ServerPlayerEntityMixin {
             LOGGER.info("[batch-farreach] 阻止服务端超距自动关箱 menu={}", handler.getType());
         }
         return true;
+    }
+
+    /** 【诊断】谁在关箱：打印关闭时的菜单 syncId 和调用链。 */
+    @Inject(method = "closeHandledScreen", at = @At("HEAD"))
+    private void litematicaContainerFiller$logClose(CallbackInfo ci) {
+        if (!BatchToolState.isActive()) {
+            return;
+        }
+        ServerPlayerEntity self = (ServerPlayerEntity) (Object) this;
+        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+        StringBuilder callers = new StringBuilder();
+        for (int i = 2; i < Math.min(stack.length, 9); i++) {
+            if (callers.length() > 0) {
+                callers.append(" <- ");
+            }
+            callers.append(stack[i].getClassName()).append('#').append(stack[i].getMethodName());
+        }
+        LOGGER.info("[batch-close-srv] closeHandledScreen 当前菜单={} 调用链={}",
+                self.currentScreenHandler.syncId, callers);
+    }
+
+    /** 【诊断】开箱后服务端的 currentScreenHandler 到底有没有切过去。 */
+    @Inject(method = "openHandledScreen", at = @At("RETURN"))
+    private void litematicaContainerFiller$logOpen(net.minecraft.screen.NamedScreenHandlerFactory factory, CallbackInfoReturnable<java.util.OptionalInt> cir) {
+        if (!BatchToolState.isActive()) {
+            return;
+        }
+        ServerPlayerEntity self = (ServerPlayerEntity) (Object) this;
+        LOGGER.info("[batch-open-srv] openHandledScreen 返回={} 当前菜单={}",
+                cir.getReturnValue(), self.currentScreenHandler.syncId);
     }
 }

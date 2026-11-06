@@ -4,6 +4,7 @@ import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.tool.BatchToolState;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
+import net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -80,6 +81,19 @@ public abstract class ServerUseItemRangeMixin {
             LOGGER.info("[batch-farreach] 放行远距离容器点击 menu={}", handler.getType());
         }
         return true;
+    }
+
+    /** 【诊断】谁在关箱：客户端发来的关箱包。 */
+    @Inject(method = "onCloseHandledScreen", at = @At("HEAD"))
+    private void litematicaContainerFiller$logClosePacket(CloseHandledScreenC2SPacket packet, CallbackInfo ci) {
+        if (!BatchToolState.isActive()) {
+            return;
+        }
+        ServerPlayNetworkHandler self = (ServerPlayNetworkHandler) (Object) this;
+        if (self.player != null) {
+            LOGGER.info("[batch-close-pkt] 收到关箱包 syncId={} 当前菜单={}",
+                    packet.getSyncId(), self.player.currentScreenHandler.syncId);
+        }
     }
 
     /** 【诊断】批量运行期间把每条点击包原样打出来，用来判断"包没到 / syncId 不匹配 / 被 canUse 拦"。 */
