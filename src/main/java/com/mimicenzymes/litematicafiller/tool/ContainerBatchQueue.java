@@ -26,6 +26,9 @@ import java.util.Set;
  * <p>⚠️ 只收「投影里真的有容器数据的方块实体」：**不会**把玩家自己放的箱子也掏空。</p>
  */
 public final class ContainerBatchQueue {
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
+
     private final ArrayDeque<BlockPos> pending = new ArrayDeque<>();
     private final Set<BlockPos> completed = new HashSet<>();
     private int total;
@@ -89,23 +92,33 @@ public final class ContainerBatchQueue {
 
         Vec3d eye = player.getEyePos();
         List<BlockPos> usable = new ArrayList<>();
+        int notLoaded = 0;
+        int airOrNoBe = 0;
+        int filtered = 0;
         for (BlockPos pos : candidates) {
             BlockPos immutable = pos.toImmutable();
-            if (!client.world.isChunkLoaded(immutable.getX() >> 4, immutable.getZ() >> 4)) {
+            // ⚠️ 必须用单参数 `isChunkLoaded(BlockPos)` —— 工程里到处用的是这个；
+            //    双参数版本参数含义不同，之前传 `>>4` 的区块坐标会被当成方块坐标 ⇒ 全部判成"未加载"⇒ 队列恒为空。
+            if (!client.world.isChunkLoaded(immutable)) {
+                notLoaded++;
                 continue;
             }
             if (client.world.getBlockState(immutable).isAir()
                     || !client.world.getBlockState(immutable).hasBlockEntity()) {
-                continue;   // 还没建出来 / 被换成别的方块了
+                airOrNoBe++;   // 还没建出来 / 被换成别的方块了
+                continue;
             }
             if (!ContainerBlockFilter.isAllowedForTools(client.world.getBlockState(immutable), client.world, immutable)) {
-                continue;   // 被「容器过滤」排除
+                filtered++;    // 被「容器过滤」排除
+                continue;
             }
             usable.add(immutable);
         }
         usable.sort(Comparator.comparingDouble(pos -> eye.squaredDistanceTo(Vec3d.ofCenter(pos))));
         this.pending.addAll(usable);
         this.total = usable.size();
+        LOGGER.info("[batch] 投影容器：候选 {} / 可用 {}（未加载 {}，空格或非方块实体 {}，被容器过滤 {}）",
+                candidates.size(), this.total, notLoaded, airOrNoBe, filtered);
         return this.total;
     }
 }
