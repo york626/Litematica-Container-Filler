@@ -361,6 +361,8 @@
   "litematica_container_filler.message.tool_collect_no_material_list": "§e[Container Filler] No Litematica material list with missing items is available.",
   "litematica_container_filler.message.tool_collect_materials_done": "§a[Container Filler] Collected %s missing material-list items.",
   "litematica_container_filler.message.tool_collect_materials_none": "§e[Container Filler] No matching missing material-list items were found in this container.",
+  "litematica_container_filler.hotkey.name.batchClearTrigger": "Batch clear containers (selection)",
+  "litematica_container_filler.hotkey.comment.batchClearTrigger": "Queues every container inside the Litematica selection and clears them. Independent from the container tool; no GUI pops up and the mouse stays free. Press again to cancel.",
   "litematica_container_filler.message.tool_done": "§a[Container Filler] Tool operation complete.",
   "litematica_container_filler.message.tool_batch_empty": "§e[Container Filler] No containers to process in the schematic (load a schematic first).",
   "litematica_container_filler.message.tool_batch_progress": "§b[Container Filler] Processing batch %s / %s",

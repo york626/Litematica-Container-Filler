@@ -1640,7 +1640,9 @@ public class ContainerToolStateMachine {
 
     /** 批量模式只接管「清空容器」（填充等下一步再做，见设计文档）。 */
     private boolean useBatchMode(ContainerToolMode toolMode) {
-        return Configs.TOOL_BATCH_SELECTION.getBooleanValue() && toolMode == ContainerToolMode.CLEAR;
+        // ★ v1.11.0-Ray：批量容器操作已**独立实现**（BatchClearController，单独热键），
+        //   容器工具不再承担批量职责 ⇒ 这里恒 false，保留旧代码仅作历史参考。
+        return false;
     }
 
     /** 进度提示：**不受** `currentOperationContinuous` 抑制（批量时每格都要看到 n/总数）。 */

@@ -324,6 +324,8 @@
   "litematica_container_filler.message.tool_no_fill_item": "§e[容器填充] 未找到明确可用于填满容器的背包物品。",
   "litematica_container_filler.message.tool_missing_items_for_sync": "§e[容器填充] 背包中没有足够的匹配物品同步此容器，已跳过。",
   "litematica_container_filler.message.tool_sync_fetching_shulker": "§b[容器填充] 正在从快捷潜影盒补取同步所需物品...",
+  "litematica_container_filler.hotkey.name.batchClearTrigger": "批量清空容器（投影选区）",
+  "litematica_container_filler.hotkey.comment.batchClearTrigger": "按下后把投影选区里所有容器排队清空（独立功能，与容器工具无关；界面不会弹出、鼠标可自由转动）。再按一次取消。",
   "litematica_container_filler.message.tool_done": "§a[容器填充] 工具操作完成。",
   "litematica_container_filler.message.tool_batch_empty": "§e[容器填充] 投影里没有可处理的容器（先框选并加载投影）。",
   "litematica_container_filler.message.tool_batch_progress": "§b[容器填充] 批量处理中 %s / %s",

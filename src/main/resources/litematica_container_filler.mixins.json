@@ -11,7 +11,7 @@
     "ClientPlayerInteractionManagerMixin",
     "HandledScreenRenderMixin",
     "ClientPlayNetworkHandlerMixin",
-    "OpenScreenProbeMixin",
+    "BatchClearScreenMixin",
     "InGameHudMixin",
     "GuiMainMenuMixin",
     "GuiMaterialListMixin",
