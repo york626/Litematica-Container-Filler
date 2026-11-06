@@ -337,7 +337,13 @@ public class ContainerToolStateMachine {
                 }
 
                 RealContainerCache.updateFromHandler(client, handler);
-                if (mode != ContainerToolMode.COLLECT_MATERIALS || Configs.COLLECT_MATERIAL_LIST_ITEMS_CLOSE_GUI.getBooleanValue()) {
+                // ★★ v1.10.1-Ray：**批量模式中途不要关箱**。
+                //   关箱（closeContainer）会把客户端菜单立刻切回"玩家背包"，而下一格的开箱请求
+                //   紧随其后发出 —— 如果下一个界面先到、关闭动作后生效，就会把刚切好的菜单覆盖回去
+                //   ⇒ 工具以为没开箱 ⇒ 20 tick 超时（日志实证：同一排里 #13 超时、#15/#16 又正常，
+                //   典型的竞态）。批量时让界面一直开着、下一个直接顶替；整批结束才关一次。
+                if (!batchActive && (mode != ContainerToolMode.COLLECT_MATERIALS
+                        || Configs.COLLECT_MATERIAL_LIST_ITEMS_CLOSE_GUI.getBooleanValue())) {
                     closeHandledScreen(client);
                 }
                 finish(client);
@@ -1601,12 +1607,14 @@ public class ContainerToolStateMachine {
         if (next == null) {
             int total = this.batch.total();
             this.batchActive = false;
+            // 整批结束才关一次箱（中途关箱会和"下一格开箱"打架，见 PROCESSING 里 1.10.1 的注释）
+            if (this.currentPos != null || closeScreen) {
+                closeHandledScreen(client);
+            }
             sendProgress(client, "litematica_container_filler.message.tool_batch_done", total, total);
             return false;
         }
-        if (closeScreen) {
-            closeHandledScreen(client);
-        }
+        // ★ v1.10.1-Ray：批量中途**绝不**关箱（竞态根因），下一个容器的界面直接顶替当前界面。
         scheduleContinuousCooldown();
         this.currentPos = next;
         this.phase = Phase.OPENING_TARGET;
