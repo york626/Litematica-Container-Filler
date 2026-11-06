@@ -23,6 +23,10 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  */
 @Mixin(ServerPlayNetworkHandler.class)
 public abstract class ServerUseItemRangeMixin {
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
+    private static long lcf$lastProbe;
+
     @Redirect(
             method = "onPlayerInteractBlock",
             at = @At(
@@ -31,10 +35,15 @@ public abstract class ServerUseItemRangeMixin {
             )
     )
     private boolean litematicaContainerFiller$allowFarContainerUse(ServerPlayerEntity player, BlockPos pos, double margin) {
-        if (Configs.TOOL_FAR_REACH.getBooleanValue() && player != null && pos != null
-                && player.getWorld().getBlockState(pos).hasBlockEntity()) {
-            return true;
+        boolean original = player.canInteractWithBlockAt(pos, margin);
+        boolean bypass = Configs.TOOL_FAR_REACH.getBooleanValue() && pos != null
+                && player.getWorld().getBlockState(pos).hasBlockEntity();
+        long now = System.currentTimeMillis();
+        if (now - lcf$lastProbe > 500L) {
+            lcf$lastProbe = now;
+            LOGGER.info("[farreach] 容器交互 pos={} margin={} 原判={} farReach={} → {}",
+                    pos, margin, original, Configs.TOOL_FAR_REACH.getBooleanValue(), bypass ? "放行" : "按原判");
         }
-        return player.canInteractWithBlockAt(pos, margin);
+        return bypass || original;
     }
 }
