@@ -284,6 +284,23 @@ public class GuiGlobalMaterialReplacementPicker extends GuiBase {
         GuiBase.openGui(this.parent);
     }
 
+    @Override
+    public boolean shouldCloseOnEsc() {
+        // ★ v1.8.6-Ray：ESC 交给下面的 keyPressed 统一处理 —— 走原版 close() 会和 malilib 的
+        //   返回逻辑打架，表现为「按 ESC 在配置界面和本界面之间来回弹、退不出去」
+        //   （Ray 2026-11-06 报；同一套坑 2026-11-04 在 GuiRenderEditor 上已踩过并修好）。
+        return false;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            this.closeToParent();   // 与「关闭」按钮同一条路：只调一次 openGui(parent)
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
     private void refreshFilter() {
         String needle = this.searchText == null ? "" : this.searchText.trim().toLowerCase(Locale.ROOT);
         this.filteredItems.clear();

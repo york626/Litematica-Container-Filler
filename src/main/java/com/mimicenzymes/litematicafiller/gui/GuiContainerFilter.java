@@ -65,7 +65,19 @@ public class GuiContainerFilter extends GuiBase {
 
     @Override
     public boolean shouldCloseOnEsc() {
-        return true;
+        // ★ v1.8.6-Ray：ESC 交给下面的 keyPressed 统一处理 —— 走原版 close() 会和 malilib 的
+        //   返回逻辑打架，表现为「按 ESC 在两个界面之间来回弹」（2026-11-04 在 GuiRenderEditor
+        //   上踩过一模一样的坑，这里照同一套改）。
+        return false;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256) { // ESC
+            this.close();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
