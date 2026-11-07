@@ -233,41 +233,49 @@ public final class BatchServerLink {
             return;
         }
         int missing = 0;
-        for (int i = 0; i < inv.size(); i++) {
-            ItemStack chosen = null;
-            for (ItemStack candidate : candidates) {
-                if (!inv.isValid(i, candidate)) {
+        // 缺料时从"背包里的潜影盒 / 精妙背包"补救（与按投影填充同一套），最多补 3 轮
+        for (int round = 0; round < 3; round++) {
+            missing = 0;
+            Map<String, Integer> needed = new LinkedHashMap<>();
+            for (int i = 0; i < inv.size(); i++) {
+                ItemStack chosen = null;
+                for (ItemStack candidate : candidates) {
+                    if (!inv.isValid(i, candidate)) {
+                        continue;
+                    }
+                    ItemStack current = inv.getStack(i);
+                    if (current.isEmpty() || ItemMatcher.isSameItem(current, candidate)) {
+                        chosen = candidate;
+                        break;
+                    }
+                }
+                if (chosen == null) {
+                    continue; // 填充不清别人的东西（只填空槽和已是候选物品的槽）
+                }
+                int max = Math.min(chosen.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
+                ItemStack current = inv.getStack(i);
+                int space = current.isEmpty() ? max : max - current.getCount();
+                if (space <= 0) {
                     continue;
                 }
-                ItemStack current = inv.getStack(i);
-                if (current.isEmpty() || ItemMatcher.isSameItem(current, candidate)) {
-                    chosen = candidate;
-                    break;
+                int taken = takeFromPlayer(player, chosen, space);
+                if (taken > 0) {
+                    if (current.isEmpty()) {
+                        ItemStack put = chosen.copy();
+                        put.setCount(taken);
+                        inv.setStack(i, put);
+                    } else {
+                        current.increment(taken);
+                    }
+                }
+                int still = space - taken;
+                if (still > 0) {
+                    missing += still;
+                    needed.merge(RegistryKeyHelper.itemId(chosen), still, Integer::sum);
                 }
             }
-            if (chosen == null) {
-                continue; // 填充不清别人的东西（只填空槽和已是候选物品的槽）
-            }
-            int max = Math.min(chosen.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
-            ItemStack current = inv.getStack(i);
-            int space = current.isEmpty() ? max : max - current.getCount();
-            if (space <= 0) {
-                continue;
-            }
-            int taken = takeFromPlayer(player, chosen, space);
-            if (taken <= 0) {
-                missing += space;
-                continue;
-            }
-            if (current.isEmpty()) {
-                ItemStack put = chosen.copy();
-                put.setCount(taken);
-                inv.setStack(i, put);
-            } else {
-                current.increment(taken);
-            }
-            if (taken < space) {
-                missing += space - taken;
+            if (needed.isEmpty() || !rescueMissing(player, needed)) {
+                break;
             }
         }
         inv.markDirty();
@@ -368,29 +376,39 @@ public final class BatchServerLink {
             if (needed.isEmpty()) {
                 break;
             }
-            boolean rescued = false;
-            if (Configs.ENABLE_QS_EXTRACTION.getBooleanValue()) {
-                rescued |= rescueFromInventoryShulkers(player, needed);
-            }
-            if (!needed.isEmpty() && Configs.ENABLE_SBP_EXTRACTION.getBooleanValue() && SbpSupport.available()) {
-                for (Map.Entry<String, Integer> e : needed.entrySet()) {
-                    if (e.getValue() <= 0) {
-                        continue;
-                    }
-                    try {
-                        SbpServerExtract.extract(player, Identifier.of(e.getKey()), e.getValue());
-                        rescued = true;
-                    } catch (Throwable ignored) {
-                    }
-                }
-            }
-            if (!rescued) {
+            if (!rescueMissing(player, needed)) {
                 break;
             }
         }
 
         inv.markDirty();
         sendResult(player, posLong, RESULT_DONE, missing);
+    }
+
+    /**
+     * 缺料补救（共用）：①玩家背包里的**潜影盒**（原版 container 组件，开关 ENABLE_QS_EXTRACTION）
+     * ②精妙背包（SbpServerExtract，开关 ENABLE_SBP_EXTRACTION）。
+     *
+     * @return true = 有实际补救动作（值得再跑一轮填充）
+     */
+    private static boolean rescueMissing(ServerPlayerEntity player, Map<String, Integer> needed) {
+        boolean rescued = false;
+        if (Configs.ENABLE_QS_EXTRACTION.getBooleanValue()) {
+            rescued |= rescueFromInventoryShulkers(player, needed);
+        }
+        if (!needed.isEmpty() && Configs.ENABLE_SBP_EXTRACTION.getBooleanValue() && SbpSupport.available()) {
+            for (Map.Entry<String, Integer> e : needed.entrySet()) {
+                if (e.getValue() <= 0) {
+                    continue;
+                }
+                try {
+                    SbpServerExtract.extract(player, Identifier.of(e.getKey()), e.getValue());
+                    rescued = true;
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return rescued;
     }
 
     /** 补救①：把玩家背包里**潜影盒**（原版 container 组件）里需要的物品倒出来。 */

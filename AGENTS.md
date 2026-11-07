@@ -31,6 +31,8 @@
 
 | 版本 | 内容 | 状态 |
 |---|---|---|
+| **1.14.0-Ray** | 「填满容器」改名**「填充容器」**+ 物品列表/手持模式（`batchFillItemMode`/`batchFillItemList`，对齐打印机「填充」页）；**按投影填充缺料自动补货**（服务端直连内：背包潜影盒→精妙背包，最多 3 轮） | ⏳ 待 Ray 实测 |
+| **1.13.0-Ray** | 动作定名（清空/按投影填充/填满容器）+ **服务端直连快速通道**（batch_action/batch_result，单人/装本模组的服务器直接改容器 Inventory，否则回退点击路径）；空模板判据改问模板索引+rebuildIndex | ✅ Ray 实测通过（直连生效、速度≈二改；清空/按投影填充均过） |
 | **1.12.9-Ray** | 清掉 1.12.5~1.12.7 的诊断日志；点击发完**同 tick 直接开下一格**（每格 ~3-4 tick → ~2 tick）；缓存改为按计划预测（清空记空、填满记模板） | ⏳ 待 Ray 实测 |
 | **1.12.8-Ray** | 真修「远处容器扔不掉」：**第四道闸在父类 `PlayerEntity.tick()`** 的 `canUse` 自动关箱（1.12.4 只放行了 `ServerPlayerEntity.tick` 那道）⇒ 新增 `PlayerEntityMixin` 放行。现在服务端四处闸全放行（开箱 4.5 / ServerPlayerEntity.tick / PlayerEntity.tick / onClickSlot） | ✅ Ray 2026-11-06 实测「远处容器也能清空」 |
 | **1.12.7-Ray** | 诊断版：服务端记录开箱返回、关箱调用链、关箱包 | 诊断用 |
