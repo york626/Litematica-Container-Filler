@@ -8,6 +8,7 @@ import com.mimicenzymes.litematicafiller.filter.ContainerFilterMode;
 import com.mimicenzymes.litematicafiller.filter.ContainerFilterScope;
 import com.mimicenzymes.litematicafiller.gui.GuiConfigs;
 import com.mimicenzymes.litematicafiller.input.InputHandler;
+import com.mimicenzymes.litematicafiller.tool.BatchFillItemMode;
 import com.mimicenzymes.litematicafiller.tool.BatchToolMode;
 import com.mimicenzymes.litematicafiller.tool.BatchToolRange;
 import com.mimicenzymes.litematicafiller.tool.ContainerClearOutputMode;
@@ -111,6 +112,10 @@ public class Configs implements IConfigHandler {
     public static final ConfigOptionList BATCH_TOOL_RANGE            = new ConfigOptionList("litematica_container_filler.config.name.batchToolRange", BatchToolRange.SELECTION, "litematica_container_filler.config.comment.batchToolRange");
     /** 服务端放行"容器方块实体"的远距离右键（只对容器生效，普通方块仍按原版距离）。 */
     public static final ConfigBoolean BATCH_TOOL_FAR_REACH           = new ConfigBoolean("litematica_container_filler.config.name.batchToolFarReach", true, "litematica_container_filler.config.comment.batchToolFarReach");
+    /** 「填充容器」的取物模式：物品列表 / 手持物品（对齐打印机「填充」页）。 */
+    public static final ConfigOptionList BATCH_FILL_ITEM_MODE        = new ConfigOptionList("litematica_container_filler.config.name.batchFillItemMode", BatchFillItemMode.BLOCKLIST, "litematica_container_filler.config.comment.batchFillItemMode");
+    /** 「填充容器」物品列表模式用的物品 ID 列表（按顺序优先）。 */
+    public static final ConfigStringList BATCH_FILL_ITEM_LIST        = new ConfigStringList("litematica_container_filler.config.name.batchFillItemList", ImmutableList.of("minecraft:cobblestone"), "litematica_container_filler.config.comment.batchFillItemList");
 
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
@@ -230,7 +235,9 @@ public class Configs implements IConfigHandler {
                 BATCH_TOOL_ENABLED,
                 BATCH_TOOL_MODE,
                 BATCH_TOOL_RANGE,
-                BATCH_TOOL_FAR_REACH
+                BATCH_TOOL_FAR_REACH,
+                BATCH_FILL_ITEM_MODE,
+                BATCH_FILL_ITEM_LIST
         );
 
         RENDER_OPTIONS = ImmutableList.of(

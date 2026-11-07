@@ -7,7 +7,12 @@ import com.mimicenzymes.litematicafiller.tool.ContainerClearOutputMode;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import com.mimicenzymes.litematicafiller.compat.sbp.SbpServerExtract;
+import com.mimicenzymes.litematicafiller.compat.sbp.SbpSupport;
+import com.mimicenzymes.litematicafiller.tool.BatchFillItemMode;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.block.entity.CrafterBlockEntity;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
@@ -18,12 +23,17 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.item.Item;
+import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
+import java.util.LinkedHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -217,36 +227,40 @@ public final class BatchServerLink {
     }
 
     private static void handleFillFull(long posLong, ServerPlayerEntity player, Inventory inv) {
-        ItemStack best = pickBestFillItem(player, inv);
-        if (best == null) {
+        List<ItemStack> candidates = resolveFillCandidates(player);
+        if (candidates.isEmpty()) {
             sendResult(player, posLong, RESULT_NO_ITEM, 0);
             return;
         }
-        int max = Math.min(best.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
         int missing = 0;
         for (int i = 0; i < inv.size(); i++) {
-            if (!inv.isValid(i, best)) {
-                continue;
+            ItemStack chosen = null;
+            for (ItemStack candidate : candidates) {
+                if (!inv.isValid(i, candidate)) {
+                    continue;
+                }
+                ItemStack current = inv.getStack(i);
+                if (current.isEmpty() || ItemMatcher.isSameItem(current, candidate)) {
+                    chosen = candidate;
+                    break;
+                }
             }
+            if (chosen == null) {
+                continue; // 填充不清别人的东西（只填空槽和已是候选物品的槽）
+            }
+            int max = Math.min(chosen.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
             ItemStack current = inv.getStack(i);
-            int space;
-            if (current.isEmpty()) {
-                space = max;
-            } else if (ItemMatcher.isSameItem(current, best)) {
-                space = max - current.getCount();
-            } else {
-                continue; // 填满不清别人的东西
-            }
+            int space = current.isEmpty() ? max : max - current.getCount();
             if (space <= 0) {
                 continue;
             }
-            int taken = takeFromPlayer(player, best, space);
+            int taken = takeFromPlayer(player, chosen, space);
             if (taken <= 0) {
                 missing += space;
                 continue;
             }
             if (current.isEmpty()) {
-                ItemStack put = best.copy();
+                ItemStack put = chosen.copy();
                 put.setCount(taken);
                 inv.setStack(i, put);
             } else {
@@ -260,50 +274,51 @@ public final class BatchServerLink {
         sendResult(player, posLong, RESULT_DONE, missing);
     }
 
+    /** 「填充容器」的候选物品（服务端直接读同一份配置）：物品列表模式解析列表；手持模式用主手物品。 */
+    private static List<ItemStack> resolveFillCandidates(ServerPlayerEntity player) {
+        List<ItemStack> out = new ArrayList<>();
+        if (Configs.BATCH_FILL_ITEM_MODE.getOptionListValue() == BatchFillItemMode.HANDHELD) {
+            ItemStack held = player.getMainHandStack();
+            if (!held.isEmpty()) {
+                ItemStack proto = held.copy();
+                proto.setCount(1);
+                out.add(proto);
+            }
+            return out;
+        }
+        for (String raw : Configs.BATCH_FILL_ITEM_LIST.getStrings()) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            try {
+                Item item = Registries.ITEM.get(Identifier.of(raw.trim().toLowerCase()));
+                if (item != Items.AIR) {
+                    out.add(new ItemStack(item));
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return out;
+    }
+
     private static void handleSchematicFill(long posLong, ServerPlayerEntity player, Inventory inv, List<Target> targets) {
         Set<Integer> targetSlots = new HashSet<>();
-        int missing = 0;
+        Map<Integer, ItemStack> wantedBySlot = new LinkedHashMap<>();
 
         for (Target target : targets) {
             int slot = target.slot() & 0xFF;
-            targetSlots.add(slot);
             if (slot < 0 || slot >= inv.size() || target.stack().isEmpty()) {
                 continue;
             }
+            targetSlots.add(slot);
             if (inv instanceof CrafterBlockEntity crafter && crafter.isSlotDisabled(slot)) {
                 continue; // 锁槽不动
             }
-            ItemStack wanted = target.stack();
-            ItemStack current = inv.getStack(slot);
-            if (ItemMatcher.isSameItem(current, wanted) && current.getCount() == wanted.getCount()) {
-                continue;
-            }
-            if (!inv.isValid(slot, wanted)) {
-                missing += wanted.getCount();
-                continue;
-            }
-            if (!current.isEmpty()) {
-                inv.setStack(slot, ItemStack.EMPTY);
-                player.getInventory().offerOrDrop(current);
-            }
-            int taken = takeFromPlayer(player, wanted, wanted.getCount());
-            if (taken <= 0) {
-                missing += wanted.getCount();
-                continue;
-            }
-            ItemStack put = wanted.copy();
-            put.setCount(taken);
-            inv.setStack(slot, put);
-            if (taken < wanted.getCount()) {
-                missing += wanted.getCount() - taken;
-            }
+            wantedBySlot.put(slot, target.stack());
         }
 
-        // 模板里没有的槽位：多余物品退回玩家（"按模板"语义）
+        // 先把"模板外/不符"的旧内容退给玩家（按模板语义：容器最终 = 模板）
         for (int i = 0; i < inv.size(); i++) {
-            if (targetSlots.contains(i)) {
-                continue;
-            }
             if (inv instanceof CrafterBlockEntity crafter && crafter.isSlotDisabled(i)) {
                 continue;
             }
@@ -311,65 +326,116 @@ public final class BatchServerLink {
             if (stack.isEmpty()) {
                 continue;
             }
-            inv.setStack(i, ItemStack.EMPTY);
-            player.getInventory().offerOrDrop(stack);
+            ItemStack wanted = wantedBySlot.get(i);
+            boolean keep = wanted != null && ItemMatcher.isSameItem(stack, wanted);
+            if (!keep) {
+                inv.setStack(i, ItemStack.EMPTY);
+                player.getInventory().offerOrDrop(stack);
+            }
+        }
+
+        // 填充；缺料时按开关从"背包里的潜影盒 / 精妙背包"补救，再补一轮
+        int missing = 0;
+        Map<String, Integer> needed = new LinkedHashMap<>();
+        for (int round = 0; round < 3; round++) {
+            missing = 0;
+            needed.clear();
+            for (Map.Entry<Integer, ItemStack> entry : wantedBySlot.entrySet()) {
+                int slot = entry.getKey();
+                ItemStack wanted = entry.getValue();
+                ItemStack current = inv.getStack(slot);
+                int have = ItemMatcher.isSameItem(current, wanted) ? current.getCount() : 0;
+                int need = wanted.getCount() - have;
+                if (need <= 0) {
+                    continue;
+                }
+                int taken = takeFromPlayer(player, wanted, need);
+                if (taken > 0) {
+                    if (have > 0) {
+                        current.increment(taken);
+                    } else {
+                        ItemStack put = wanted.copy();
+                        put.setCount(taken);
+                        inv.setStack(slot, put);
+                    }
+                }
+                int still = need - taken;
+                if (still > 0) {
+                    missing += still;
+                    needed.merge(RegistryKeyHelper.itemId(wanted), still, Integer::sum);
+                }
+            }
+            if (needed.isEmpty()) {
+                break;
+            }
+            boolean rescued = false;
+            if (Configs.ENABLE_QS_EXTRACTION.getBooleanValue()) {
+                rescued |= rescueFromInventoryShulkers(player, needed);
+            }
+            if (!needed.isEmpty() && Configs.ENABLE_SBP_EXTRACTION.getBooleanValue() && SbpSupport.available()) {
+                for (Map.Entry<String, Integer> e : needed.entrySet()) {
+                    if (e.getValue() <= 0) {
+                        continue;
+                    }
+                    try {
+                        SbpServerExtract.extract(player, Identifier.of(e.getKey()), e.getValue());
+                        rescued = true;
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            if (!rescued) {
+                break;
+            }
         }
 
         inv.markDirty();
         sendResult(player, posLong, RESULT_DONE, missing);
     }
 
-    /** 容器工具「填满容器」的选物规则：背包里占用槽位数严格最多、达到阈值、容器肯收的那种。 */
-    private static ItemStack pickBestFillItem(ServerPlayerEntity player, Inventory inv) {
-        int threshold = Math.max(1, Configs.TOOL_FILL_FULL_THRESHOLD.getIntegerValue());
-        List<ItemStack> protos = new ArrayList<>();
-        List<Integer> counts = new ArrayList<>();
+    /** 补救①：把玩家背包里**潜影盒**（原版 container 组件）里需要的物品倒出来。 */
+    private static boolean rescueFromInventoryShulkers(ServerPlayerEntity player, Map<String, Integer> needed) {
+        boolean any = false;
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = player.getInventory().getStack(i);
-            if (stack.isEmpty()) {
+            if (needed.values().stream().allMatch(v -> v <= 0)) {
+                break;
+            }
+            ItemStack box = player.getInventory().getStack(i);
+            ContainerComponent comp = box.get(DataComponentTypes.CONTAINER);
+            if (comp == null) {
                 continue;
             }
-            int idx = -1;
-            for (int j = 0; j < protos.size(); j++) {
-                if (ItemMatcher.isSameItem(protos.get(j), stack)) {
-                    idx = j;
+            List<ItemStack> inner = new ArrayList<>();
+            comp.stream().forEach(inner::add);
+            boolean changed = false;
+            for (int j = 0; j < inner.size(); j++) {
+                ItemStack in = inner.get(j);
+                if (in.isEmpty()) {
+                    continue;
+                }
+                for (Map.Entry<String, Integer> e : needed.entrySet()) {
+                    if (e.getValue() <= 0) {
+                        continue;
+                    }
+                    ItemStack want = new ItemStack(Registries.ITEM.get(Identifier.of(e.getKey())));
+                    if (!ItemMatcher.isSameItem(in, want)) {
+                        continue;
+                    }
+                    int take = Math.min(in.getCount(), e.getValue());
+                    ItemStack part = in.split(take);
+                    player.getInventory().offerOrDrop(part);
+                    e.setValue(e.getValue() - take);
+                    changed = true;
+                    any = true;
                     break;
                 }
             }
-            if (idx < 0) {
-                ItemStack proto = stack.copy();
-                proto.setCount(1);
-                protos.add(proto);
-                counts.add(1);
-            } else {
-                counts.set(idx, counts.get(idx) + 1);
+            if (changed) {
+                box.set(DataComponentTypes.CONTAINER, ContainerComponent.fromStacks(inner));
+                player.getInventory().markDirty();
             }
         }
-
-        int bestIdx = -1;
-        int bestCount = threshold - 1;
-        boolean tie = false;
-        for (int i = 0; i < protos.size(); i++) {
-            boolean usable = false;
-            for (int s = 0; s < inv.size() && !usable; s++) {
-                usable = inv.isValid(s, protos.get(i));
-            }
-            if (!usable) {
-                continue;
-            }
-            int count = counts.get(i);
-            if (count > bestCount) {
-                bestIdx = i;
-                bestCount = count;
-                tie = false;
-            } else if (count == bestCount && bestIdx >= 0) {
-                tie = true;
-            }
-        }
-        if (bestIdx < 0 || tie) {
-            return null;
-        }
-        return protos.get(bestIdx);
+        return any;
     }
 
     private static int takeFromPlayer(ServerPlayerEntity player, ItemStack proto, int amount) {
@@ -387,6 +453,12 @@ public final class BatchServerLink {
             remaining -= take;
         }
         return amount - remaining;
+    }
+
+    private static final class RegistryKeyHelper {
+        static String itemId(ItemStack stack) {
+            return Registries.ITEM.getId(stack.getItem()).toString();
+        }
     }
 
     private static void sendResult(ServerPlayerEntity player, long pos, int status, int missing) {

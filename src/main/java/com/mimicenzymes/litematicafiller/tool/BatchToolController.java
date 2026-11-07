@@ -13,11 +13,14 @@ import com.mimicenzymes.litematicafiller.network.ClickPacketRateLimiter;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
 import net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket;
 import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
+import net.minecraft.registry.Registries;
 import net.minecraft.screen.PlayerScreenHandler;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.ScreenHandlerType;
@@ -25,6 +28,7 @@ import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
@@ -89,19 +93,6 @@ public final class BatchToolController {
     }
 
     private record ClickOp(int slot, int button, SlotActionType action) {
-    }
-
-    /** 「填满容器」的物品键（严格匹配：物品 + 组件，与容器工具同一套口径）。 */
-    private record ItemKey(ItemStack stack) {
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof ItemKey other && ItemMatcher.isSameItem(this.stack, other.stack);
-        }
-
-        @Override
-        public int hashCode() {
-            return ItemMatcher.matchingHash(this.stack);
-        }
     }
 
     private final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
@@ -813,35 +804,32 @@ public final class BatchToolController {
     }
 
     /**
-     * 「填满容器」（2026-11-07 Ray 定语义）：**不看投影模板**，用背包里的物品把容器填满。
-     * 选物规则与容器工具「填满容器」一致：取背包里占用槽位数最多、且容器肯收的那一种；
-     * 并列第一 / 达不到阈值（{@code TOOL_FILL_FULL_THRESHOLD}）⇒ 不动。
+     * 「填充容器」（2026-11-07 Ray 定语义，对齐打印机「填充」页）：**不看投影模板**，
+     * 用「填充物品模式」（物品列表 / 手持物品）指定的物品把容器填满。
      */
     private void buildFillFullPlan(MinecraftClient client) {
         if (this.shadow == null || this.current == null) {
             return;
         }
-        ItemStack best = pickBestFillItem(client);
-        if (best == null) {
-            this.fillNoData = true; // 复用"跳过"通道：没有明确的可填物品
+        List<ItemStack> candidates = resolveFillCandidates(client);
+        if (candidates.isEmpty()) {
+            this.fillNoData = true; // 复用"跳过"通道：没有可用的填充物品
             this.fillNoItem = true;
             return;
         }
 
         FillPlanState state = new FillPlanState(client);
         int planned = 0;
-        int max = best.getMaxCount();
 
         for (Slot slot : containerSlots(client)) {
             ItemStack current = state.model.getOrDefault(slot.id, ItemStack.EMPTY);
-            if (!current.isEmpty() && !ItemMatcher.isSameItem(current, best)) {
-                continue; // 填满不清别人的东西
+            if (!current.isEmpty() && !isFillableCandidate(current, candidates)) {
+                continue; // 填充不清别人的东西（只填空槽和已是同类物品的槽）
             }
-            if (!canInsertInto(client, slot, best)) {
+            ItemStack target = pickCandidateForSlot(client, slot, candidates, state);
+            if (target == null) {
                 continue;
             }
-            ItemStack target = best.copy();
-            target.setCount(max);
             planned += state.fillSlot(client, slot, target, true);
         }
 
@@ -855,56 +843,71 @@ public final class BatchToolController {
         }
         this.fillTargets = predicted;
 
-        LOGGER.info("[batch] 填满容器 pos={} 物品={} 计划点击 {} 次", this.current, best.getItem(), state.planned);
+        LOGGER.info("[batch] 填充容器 pos={} 计划点击 {} 次", this.current, state.planned);
     }
 
-    /**
-     * 容器工具「填满容器」的选物规则：背包里占用槽位数**严格最多**、且数量达到阈值、
-     * 容器至少有一个槽肯收的那种物品；并列第一/不达标 ⇒ {@code null}。
-     */
-    private ItemStack pickBestFillItem(MinecraftClient client) {
-        int threshold = Math.max(1, Configs.TOOL_FILL_FULL_THRESHOLD.getIntegerValue());
-        Map<ItemKey, Integer> counts = new LinkedHashMap<>();
-        Map<ItemKey, ItemStack> protos = new LinkedHashMap<>();
-        for (int i = 0; i < 36; i++) {
-            ItemStack stack = client.player.getInventory().getStack(i);
-            if (stack.isEmpty()) {
+    private static boolean isFillableCandidate(ItemStack current, List<ItemStack> candidates) {
+        for (ItemStack candidate : candidates) {
+            if (ItemMatcher.isSameItem(current, candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 为一个槽选填充物品：第一个"容器肯收、背包里还有"的候选（列表顺序即优先级）。 */
+    private ItemStack pickCandidateForSlot(MinecraftClient client, Slot slot, List<ItemStack> candidates, FillPlanState state) {
+        for (ItemStack candidate : candidates) {
+            if (!canInsertInto(client, slot, candidate)) {
                 continue;
             }
-            ItemKey key = new ItemKey(stack);
-            counts.merge(key, 1, Integer::sum);
-            protos.putIfAbsent(key, stack.copy());
-        }
-
-        ItemKey best = null;
-        int bestCount = threshold - 1;
-        boolean tie = false;
-        for (Map.Entry<ItemKey, Integer> entry : counts.entrySet()) {
-            boolean usable = false;
-            for (Slot slot : containerSlots(client)) {
-                if (canInsertInto(client, slot, entry.getKey().stack())) {
-                    usable = true;
+            boolean inStock = false;
+            for (int slotId : state.playerSlots) {
+                ItemStack stack = state.model.getOrDefault(slotId, ItemStack.EMPTY);
+                if (!stack.isEmpty() && ItemMatcher.isSameItem(stack, candidate)) {
+                    inStock = true;
                     break;
                 }
             }
-            if (!usable) {
+            if (inStock) {
+                ItemStack target = candidate.copy();
+                target.setCount(candidate.getMaxCount());
+                return target;
+            }
+        }
+        return null;
+    }
+
+    /** 「填充容器」的候选物品：物品列表模式解析列表（按顺序）；手持模式用主手物品。 */
+    private List<ItemStack> resolveFillCandidates(MinecraftClient client) {
+        if (Configs.BATCH_FILL_ITEM_MODE.getOptionListValue() == BatchFillItemMode.HANDHELD) {
+            ItemStack held = client.player.getMainHandStack();
+            if (held.isEmpty()) {
+                return List.of();
+            }
+            ItemStack proto = held.copy();
+            proto.setCount(1);
+            return List.of(proto);
+        }
+
+        List<ItemStack> out = new ArrayList<>();
+        for (String raw : Configs.BATCH_FILL_ITEM_LIST.getStrings()) {
+            if (raw == null || raw.isBlank()) {
                 continue;
             }
-            int count = entry.getValue();
-            if (count > bestCount) {
-                best = entry.getKey();
-                bestCount = count;
-                tie = false;
-            } else if (count == bestCount && best != null) {
-                tie = true;
+            try {
+                Identifier id = Identifier.of(raw.trim().toLowerCase());
+                Item item = Registries.ITEM.get(id);
+                if (item == Items.AIR) {
+                    LOGGER.info("[batch] 填充物品列表里的 {} 不是物品，跳过", raw);
+                    continue;
+                }
+                out.add(new ItemStack(item));
+            } catch (Throwable t) {
+                LOGGER.info("[batch] 填充物品列表里的 {} 解析失败：{}", raw, t.toString());
             }
         }
-        if (best == null || tie) {
-            return null;
-        }
-        ItemStack result = protos.get(best).copy();
-        result.setCount(1);
-        return result;
+        return out;
     }
 
     /**
