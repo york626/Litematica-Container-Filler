@@ -36,6 +36,8 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
         ServuxSyncHandler.registerPayloads();
         TakeItOutCompat.registerPayload();
         com.mimicenzymes.litematicafiller.compat.sbp.SbpPayloads.register();
+        // 「批量工具」服务端直连快速通道（单人 / 装了本模组的服务器生效；别处自动回退点击路径）
+        com.mimicenzymes.litematicafiller.network.BatchServerLink.register();
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.tick());
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
