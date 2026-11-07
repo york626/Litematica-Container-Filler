@@ -440,5 +440,6 @@
   "litematica_container_filler.config.option.batchFillItemMode.blocklist": "Item list",
   "litematica_container_filler.config.option.batchFillItemMode.handheld": "Held item",
   "litematica_container_filler.config.name.batchFillItemList": "Fill item list",
-  "litematica_container_filler.config.comment.batchFillItemList": "Item IDs used by Fill Containers (item-list mode), in priority order, e.g. minecraft:cobblestone."
+  "litematica_container_filler.config.comment.batchFillItemList": "Item IDs used by Fill Containers (item-list mode), in priority order, e.g. minecraft:cobblestone.",
+  "litematica_container_filler.message.batch_tool_out_of_material": "§e[Batch Tools] Out of materials: %s filled, %s containers left unfilled."
 }

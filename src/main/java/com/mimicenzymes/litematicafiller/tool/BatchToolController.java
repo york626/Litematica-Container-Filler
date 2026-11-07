@@ -108,6 +108,8 @@ public final class BatchToolController {
     private int fastMissing;
     /** 服务端直连：按投影填充的模板缓存（回执 DONE 后写进 RealContainerCache）。 */
     private final Map<Long, Map<Integer, ItemStack>> pendingFastTargets = new HashMap<>();
+    /** 「填充容器」的候选物品：**批量开始时**确定一次（手持=那一刻主手里的东西），整批沿用。 */
+    private List<ItemStack> fillCandidates = List.of();
     private BlockPos current;
     private int waited;
     private long openedAtMs;
@@ -192,6 +194,16 @@ public final class BatchToolController {
         this.done = 0;
         this.skipped = 0;
         this.useServerLink = BatchServerLink.isSupported();
+        if (selected == BatchToolMode.FILL_FULL) {
+            // 手持模式锁"这一刻主手里的东西"：整批用同一个物品类型，
+            // 不然手里的那组填完、主手一空，剩下的格子就全被当成"没有物品"跳过。
+            this.fillCandidates = resolveFillCandidates(client);
+            if (this.fillCandidates.isEmpty()) {
+                BatchToolState.setActive(false); // 上面的 resetState 之后又开了闸，这里收回去
+                message(client, "litematica_container_filler.message.batch_tool_no_fill_item");
+                return;
+            }
+        }
         if (selected == BatchToolMode.SCHEMATIC_FILL) {
             // 模板索引是懒建的：批量开始前重建一次，避免"索引过期/投影后加"导致误判没数据
             try {
@@ -564,6 +576,7 @@ public final class BatchToolController {
         this.fillTargets = Map.of();
         this.clickPlan.clear();
         this.useServerLink = false;
+        this.fillCandidates = List.of();
         this.pendingFast = 0;
         this.fastMissing = 0;
         this.pendingFastTargets.clear();
@@ -605,10 +618,12 @@ public final class BatchToolController {
         }
         int action;
         List<BatchServerLink.Target> targets = List.of();
+        List<ItemStack> items = List.of();
         if (this.mode == BatchToolMode.CLEAR) {
             action = BatchServerLink.ACTION_CLEAR;
         } else if (this.mode == BatchToolMode.FILL_FULL) {
             action = BatchServerLink.ACTION_FILL_FULL;
+            items = this.fillCandidates;
         } else {
             Map<Integer, ItemStack> required = readRequired(client, pos);
             if (required == null) {
@@ -629,7 +644,7 @@ public final class BatchToolController {
         }
 
         this.pendingFast++;
-        BatchServerLink.sendAction(pos, action, targets);
+        BatchServerLink.sendAction(pos, action, targets, items);
     }
 
     /** 服务端回执（主线程）。 */
@@ -637,6 +652,7 @@ public final class BatchToolController {
         if (this.phase != Phase.FAST_SEND && this.phase != Phase.FAST_WAIT) {
             return;
         }
+        MinecraftClient client = MinecraftClient.getInstance();
         this.pendingFast = Math.max(0, this.pendingFast - 1);
         BlockPos pos = BlockPos.fromLong(posLong);
         Map<Integer, ItemStack> targets = this.pendingFastTargets.remove(posLong);
@@ -656,6 +672,16 @@ public final class BatchToolController {
             }
             case BatchServerLink.RESULT_NO_CONTAINER -> this.skipped++;
             case BatchServerLink.RESULT_NO_ITEM -> this.skipped++;
+            case BatchServerLink.RESULT_NO_MATERIAL -> {
+                // 材料彻底耗尽：中止整批，别把剩下的格子一格一格空跑
+                this.skipped++;
+                int remaining = this.queue.size() + Math.max(0, this.pendingFast - 1);
+                int doneCount = this.done;
+                LOGGER.info("[batch] 材料耗尽，中止：已填 {}，剩 {} 格未填", doneCount, remaining);
+                resetState();
+                message(client, "litematica_container_filler.message.batch_tool_out_of_material", doneCount, remaining);
+                return;
+            }
             case BatchServerLink.RESULT_MISSING -> {
                 this.done++;
                 this.fastMissing += missing;
@@ -811,7 +837,7 @@ public final class BatchToolController {
         if (this.shadow == null || this.current == null) {
             return;
         }
-        List<ItemStack> candidates = resolveFillCandidates(client);
+        List<ItemStack> candidates = this.fillCandidates; // 批量开始时锁定的候选
         if (candidates.isEmpty()) {
             this.fillNoData = true; // 复用"跳过"通道：没有可用的填充物品
             this.fillNoItem = true;

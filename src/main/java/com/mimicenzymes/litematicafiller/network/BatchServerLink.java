@@ -67,6 +67,8 @@ public final class BatchServerLink {
     public static final int RESULT_MISSING = 3;
     public static final int RESULT_NO_ITEM = 4;
     public static final int RESULT_FAILED = 5;
+    /** 材料耗尽：这一格一点都没填上（客户端据此中止整批）。 */
+    public static final int RESULT_NO_MATERIAL = 6;
 
     private static boolean registered;
 
@@ -77,8 +79,13 @@ public final class BatchServerLink {
     public record Target(byte slot, ItemStack stack) {
     }
 
-    /** C2S：对一个容器执行批量动作。 */
-    public record Action(long pos, int action, List<Target> targets) implements CustomPayload {
+    /**
+     * C2S：对一个容器执行批量动作。
+     *
+     * <p>{@code targets}＝按投影填充的槽位目标；{@code items}＝填充容器的候选物品
+     * （**批量开始时**在客户端确定好——手持模式锁"那一刻主手里的东西"，避免填到一半主手空了整批停摆）。</p>
+     */
+    public record Action(long pos, int action, List<Target> targets, List<ItemStack> items) implements CustomPayload {
         public static final Id<Action> ID = new Id<>(Identifier.of("litematica_container_filler", "batch_action"));
 
         public static final PacketCodec<RegistryByteBuf, Action> CODEC =
@@ -92,6 +99,10 @@ public final class BatchServerLink {
                 buf.writeByte(target.slot());
                 ItemStack.OPTIONAL_PACKET_CODEC.encode(buf, target.stack());
             }
+            buf.writeVarInt(value.items().size());
+            for (ItemStack item : value.items()) {
+                ItemStack.OPTIONAL_PACKET_CODEC.encode(buf, item);
+            }
         }
 
         private static Action read(RegistryByteBuf buf) {
@@ -104,7 +115,12 @@ public final class BatchServerLink {
                 ItemStack stack = ItemStack.OPTIONAL_PACKET_CODEC.decode(buf);
                 targets.add(new Target(slot, stack));
             }
-            return new Action(pos, action, targets);
+            int itemCount = buf.readVarInt();
+            List<ItemStack> items = new ArrayList<>(Math.min(itemCount, 64));
+            for (int i = 0; i < itemCount; i++) {
+                items.add(ItemStack.OPTIONAL_PACKET_CODEC.decode(buf));
+            }
+            return new Action(pos, action, targets, items);
         }
 
         @Override
@@ -162,9 +178,9 @@ public final class BatchServerLink {
         }
     }
 
-    public static void sendAction(BlockPos pos, int action, List<Target> targets) {
+    public static void sendAction(BlockPos pos, int action, List<Target> targets, List<ItemStack> items) {
         try {
-            ClientPlayNetworking.send(new Action(pos.asLong(), action, targets));
+            ClientPlayNetworking.send(new Action(pos.asLong(), action, targets, items));
         } catch (Throwable t) {
             LOGGER.warn("[batch] 直连请求发送失败 pos={}", pos, t);
         }
@@ -197,7 +213,7 @@ public final class BatchServerLink {
 
             switch (payload.action()) {
                 case ACTION_CLEAR -> handleClear(posLong, player, inv);
-                case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv);
+                case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv, payload.items());
                 case ACTION_SCHEMATIC_FILL -> handleSchematicFill(posLong, player, inv, payload.targets());
                 default -> sendResult(player, posLong, RESULT_FAILED, 0);
             }
@@ -226,16 +242,17 @@ public final class BatchServerLink {
         sendResult(player, posLong, RESULT_DONE, 0);
     }
 
-    private static void handleFillFull(long posLong, ServerPlayerEntity player, Inventory inv) {
-        List<ItemStack> candidates = resolveFillCandidates(player);
-        if (candidates.isEmpty()) {
+    private static void handleFillFull(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
             sendResult(player, posLong, RESULT_NO_ITEM, 0);
             return;
         }
         int missing = 0;
+        int placedTotal = 0;
         // 缺料时从"背包里的潜影盒 / 精妙背包"补救（与按投影填充同一套），最多补 3 轮
         for (int round = 0; round < 3; round++) {
             missing = 0;
+            placedTotal = 0;
             Map<String, Integer> needed = new LinkedHashMap<>();
             for (int i = 0; i < inv.size(); i++) {
                 ItemStack chosen = null;
@@ -260,6 +277,7 @@ public final class BatchServerLink {
                 }
                 int taken = takeFromPlayer(player, chosen, space);
                 if (taken > 0) {
+                    placedTotal += taken;
                     if (current.isEmpty()) {
                         ItemStack put = chosen.copy();
                         put.setCount(taken);
@@ -279,7 +297,8 @@ public final class BatchServerLink {
             }
         }
         inv.markDirty();
-        sendResult(player, posLong, RESULT_DONE, missing);
+        // 一点都没填上 ⇒ 材料耗尽：让客户端中止整批，别一格一格空跑
+        sendResult(player, posLong, placedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
     }
 
     /** 「填充容器」的候选物品（服务端直接读同一份配置）：物品列表模式解析列表；手持模式用主手物品。 */
@@ -344,6 +363,7 @@ public final class BatchServerLink {
 
         // 填充；缺料时按开关从"背包里的潜影盒 / 精妙背包"补救，再补一轮
         int missing = 0;
+        int placedTotal = 0;
         Map<String, Integer> needed = new LinkedHashMap<>();
         for (int round = 0; round < 3; round++) {
             missing = 0;
@@ -359,6 +379,7 @@ public final class BatchServerLink {
                 }
                 int taken = takeFromPlayer(player, wanted, need);
                 if (taken > 0) {
+                    placedTotal += taken;
                     if (have > 0) {
                         current.increment(taken);
                     } else {
@@ -382,7 +403,7 @@ public final class BatchServerLink {
         }
 
         inv.markDirty();
-        sendResult(player, posLong, RESULT_DONE, missing);
+        sendResult(player, posLong, placedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
     }
 
     /**

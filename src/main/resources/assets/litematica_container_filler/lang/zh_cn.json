@@ -442,5 +442,6 @@
   "litematica_container_filler.config.option.batchFillItemMode.blocklist": "物品列表",
   "litematica_container_filler.config.option.batchFillItemMode.handheld": "手持物品",
   "litematica_container_filler.config.name.batchFillItemList": "填充物品列表",
-  "litematica_container_filler.config.comment.batchFillItemList": "「填充容器」（物品列表模式）按这个顺序取用背包里的对应物品填容器。\n写物品 ID，例如 minecraft:cobblestone。列表里没有/背包里也没有的会跳过。"
+  "litematica_container_filler.config.comment.batchFillItemList": "「填充容器」（物品列表模式）按这个顺序取用背包里的对应物品填容器。\n写物品 ID，例如 minecraft:cobblestone。列表里没有/背包里也没有的会跳过。",
+  "litematica_container_filler.message.batch_tool_out_of_material": "§e[批量工具] 材料用完了，已填 %s 个，剩 %s 个没填。"
 }
