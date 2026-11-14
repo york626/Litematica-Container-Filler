@@ -1017,6 +1017,12 @@ public class FillMaterialCalculator {
         for (Map.Entry<ItemStackKey, ItemStats> entry : itemStatsCache.entrySet()) {
             ItemStats stats = entry.getValue();
 
+            // 【容器视图只显示容器材料】（Ray 2026-11-14：容器选项的材料列表应只含投影容器里的东西；
+            // 之前遍历全缓存 ⇒ 957 行混着建筑方块，收集也跟着超范围）。建筑方块走「全部/方块」视图。
+            if (!containerMaterialKeys.contains(entry.getKey())) {
+                continue;
+            }
+
             int total = limitToLayer ? stats.totalLayer : stats.totalAll;
             int missing = limitToLayer ? stats.missingLayer : stats.missingAll;
             int available = limitToLayer ? stats.availableLayer : stats.availableAll;
