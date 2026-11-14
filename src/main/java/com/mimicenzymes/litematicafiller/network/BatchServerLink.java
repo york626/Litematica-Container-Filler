@@ -222,6 +222,21 @@ public final class BatchServerLink {
                 sendResult(player, posLong, RESULT_NO_CONTAINER, 0);
                 return;
             }
+            // **大型箱子合并**（Ray 2026-11-14：「不能识别双箱一起的大箱子吗」）：
+            // 大箱 = 两个 ChestBlockEntity，直接拿 BE 只有半边（27 格）——
+            // 另一半里的熔浆膏/海晶碎片/线就这样漏收了。用原版 ChestBlock.getInventory
+            // 合成 54 格的 DoubleInventory；单箱/其他容器返回自身，行为不变。
+            if (blockEntity instanceof net.minecraft.block.entity.ChestBlockEntity
+                    && player.getServerWorld().getBlockState(pos).getBlock()
+                            instanceof net.minecraft.block.ChestBlock chestBlock) {
+                Inventory merged = net.minecraft.block.ChestBlock.getInventory(
+                        chestBlock,
+                        player.getServerWorld().getBlockState(pos),
+                        player.getServerWorld(), pos, true);
+                if (merged != null) {
+                    inv = merged;
+                }
+            }
             if (!Configs.BATCH_TOOL_FAR_REACH.getBooleanValue()
                     && !player.canInteractWithBlockAt(pos, 1.0)) {
                 // 远距离放行没开时，仍然按原版距离规则来
