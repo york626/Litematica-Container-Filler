@@ -1067,31 +1067,12 @@ public class FillMaterialCalculator {
     }
 
     public static List<MaterialListEntry> mergeLists(List<MaterialListEntry> vanillaList, List<MaterialListEntry> containerList) {
-        Map<ItemStackKey, MaterialListEntry> mergedMap = new java.util.LinkedHashMap<>();
-
-        for (MaterialListEntry v : vanillaList) {
-            mergedMap.put(new ItemStackKey(v.getStack()), v);
-        }
-
-        for (MaterialListEntry c : containerList) {
-            ItemStackKey key = new ItemStackKey(c.getStack());
-            MaterialListEntry v = mergedMap.get(key);
-
-            if (v != null) {
-                // Litematica's constructor order is (stack, total, missing, mismatched, available).
-                MaterialListEntry combined = new MaterialListEntry(
-                        c.getStack(),
-                        v.getCountTotal() + c.getCountTotal(),
-                        v.getCountMissing() + c.getCountMissing(),
-                        v.getCountMismatched() + c.getCountMismatched(),
-                        v.getCountAvailable()
-                );
-                mergedMap.put(key, combined);
-            } else {
-                mergedMap.put(key, c);
-            }
-        }
-
-        return new ArrayList<>(mergedMap.values());
+        // ⛔ v1.16.14（Ray 2026-11-14：「各自管理各自的材料列表不要串一块」）：
+        // 之前的实现把同物品的数量**相加**（例：原生缺 8 + 容器缺 4 = 显示 12）⇒ 数量串了。
+        // 现在**不合并**：原生行 + 容器行各显示各的（同物品两行分开，各自数量）。
+        List<MaterialListEntry> out = new ArrayList<>();
+        out.addAll(vanillaList);
+        out.addAll(containerList);
+        return out;
     }
 }
