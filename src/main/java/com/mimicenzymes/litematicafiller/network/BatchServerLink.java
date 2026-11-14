@@ -441,7 +441,8 @@ public final class BatchServerLink {
      *       直接从盒内容拿清单缺的量放进背包，盒子（剩余内容）留在容器原位。
      *       QC 要「先搬背包→提取→放回」是因为它走客户端点击（容器里的盒子打不开）；
      *       CF 服务端直连可以直接改盒内容 ⇒ 不搬、不闪界面；</li>
-     *   <li>⛔ **只收不吐**：玩家背包/身上已收集好的东西一律不动（反向后天然成立）；</li>
+     *   <li>**收集够清单量即止**（v1.16.6，Ray：「收集够了就不需要在收集了」）：
+     *       每种缺料的量先**减去玩家背包里已有的同物品**——身上备好的部分算已收集，再按也不重复收；</li>
      *   <li><b>背包满保护</b>：放不下就立即停 + 回报 {@link #RESULT_BACKPACK_FULL}，
      *       已收的保留、没收的留在容器（绝不 offerOrDrop 丢东西）。</li>
      * </ul>
@@ -467,6 +468,19 @@ public final class BatchServerLink {
             }
             wantedCount.merge(want.getItem(), want.getCount(), Integer::sum);
         }
+        // **收集够清单量即止**：身上（玩家背包）已收集的同物品先扣——
+        // 不然每按一次热键就从仓库再收一份（v1.16.5 实测：熔浆膏/海晶碎片重复收）
+        var inventory = player.getInventory();
+        Map<Item, Integer> alreadyHeld = new LinkedHashMap<>();
+        for (int i = 0; i < inventory.size(); i++) {
+            ItemStack s = inventory.getStack(i);
+            if (!s.isEmpty()) {
+                alreadyHeld.merge(s.getItem(), s.getCount(), Integer::sum);
+            }
+        }
+        wantedCount.replaceAll((item, need) -> Math.max(0, need - alreadyHeld.getOrDefault(item, 0)));
+        wantedCount.values().removeIf(need -> need <= 0);
+        LOGGER.info("[auto-collect] 扣除身上已有后的净缺料：{} 种", wantedCount.size());
         int collectedSlots = 0;
         int collectedItems = 0;
         boolean backpackFull = false;
