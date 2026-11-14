@@ -552,6 +552,8 @@ public final class BatchServerLink {
         }
         inv.markDirty();
         player.getInventory().markDirty();
+        // **客户端副本同步**（同 handleExtractMissing：v1.16.x 收集进背包后物品栏也不刷新）
+        player.playerScreenHandler.sendContentUpdates();
         if (backpackFullFlag) {
             backpackFull = true;
         }
@@ -702,6 +704,10 @@ public final class BatchServerLink {
         }
         inv.markDirty();
         player.getInventory().markDirty();
+        // **客户端副本同步**（Ray 2026-11-14：「物品栏还显示 36 个岩浆膏，打开盒子后才消失」）：
+        // 服务端直连改完玩家背包后不主动推 ⇒ 客户端的背包是旧状态，要等打开任意容器界面才刷新
+        // ⇒ 看起来像「材料复制了」。playerScreenHandler 是常驻的玩家背包 46 槽，推它即可。
+        player.playerScreenHandler.sendContentUpdates();
         sendResult(player, posLong, extractedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
     }
 
