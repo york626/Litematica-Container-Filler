@@ -15,11 +15,13 @@ import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.block.entity.CrafterBlockEntity;
 import net.minecraft.inventory.Inventory;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
@@ -553,7 +555,7 @@ public final class BatchServerLink {
         inv.markDirty();
         player.getInventory().markDirty();
         // **客户端副本同步**（同 handleExtractMissing：v1.16.x 收集进背包后物品栏也不刷新）
-        player.playerScreenHandler.sendContentUpdates();
+        syncPlayerInventoryToClient(player);
         if (backpackFullFlag) {
             backpackFull = true;
         }
@@ -707,7 +709,7 @@ public final class BatchServerLink {
         // **客户端副本同步**（Ray 2026-11-14：「物品栏还显示 36 个岩浆膏，打开盒子后才消失」）：
         // 服务端直连改完玩家背包后不主动推 ⇒ 客户端的背包是旧状态，要等打开任意容器界面才刷新
         // ⇒ 看起来像「材料复制了」。playerScreenHandler 是常驻的玩家背包 46 槽，推它即可。
-        player.playerScreenHandler.sendContentUpdates();
+        syncPlayerInventoryToClient(player);
         sendResult(player, posLong, extractedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
     }
 
@@ -795,6 +797,29 @@ public final class BatchServerLink {
             }
         }
         return any;
+    }
+
+    /**
+     * **显式逐槽推送玩家背包到客户端**（物理必达）。
+     *
+     * <p>⚠️ 为什么不用 {@code sendContentUpdates()}：v1.17.1 实测（Ray：提取后物品栏还显示
+     * 旧数量、打开盒子才消失）——1.21 的 ScreenHandler 变更检测在「server.execute 直改
+     * inventory」的这条路径上不可靠，改完背包它并不总是发包。直接构造
+     * {@code ScreenHandlerSlotUpdateS2CPacket} 逐槽发，绕过一切检测，**包必达**。
+     */
+    private static void syncPlayerInventoryToClient(ServerPlayerEntity player) {
+        try {
+            ScreenHandler handler = player.playerScreenHandler;
+            for (int i = 0; i < handler.slots.size(); i++) {
+                player.networkHandler.sendPacket(new ScreenHandlerSlotUpdateS2CPacket(
+                        handler.syncId,
+                        handler.getRevision(),
+                        i,
+                        handler.slots.get(i).getStack()));
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[batch] 推送玩家背包同步包失败", t);
+        }
     }
 
     private static int takeFromPlayer(ServerPlayerEntity player, ItemStack proto, int amount) {
