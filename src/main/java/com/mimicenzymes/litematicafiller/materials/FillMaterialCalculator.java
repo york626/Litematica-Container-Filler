@@ -217,11 +217,31 @@ public class FillMaterialCalculator {
      * ⚠️ 材料列表没打开过时 {@code getMaterialsMissingOnly} 也能算（实时重算 available），
      * 但容器视图的缓存（{@code itemStatsCache}）要 GUI 刷新过才有 —— 没开过 ⇒ 容器部分为空。
      */
+    /** 材料列表 GUI 当前显示的行（视图+搜索过滤后；{@code MixinWidgetListBaseCapture} 每次绘制刷新）。 */
+    private static volatile List<MaterialListEntry> displayedMaterialRows = List.of();
+
+    public static void setDisplayedMaterialRows(List<?> rows) {
+        List<MaterialListEntry> list = new ArrayList<>();
+        for (Object row : rows) {
+            if (row instanceof MaterialListEntry entry && entry != null) {
+                list.add(entry);
+            }
+        }
+        displayedMaterialRows = list;
+    }
+
     public static List<ItemStack> getCurrentMissingForAutoCollect() {
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
         if (client.player == null || materialList == null) {
             return List.of();
+        }
+        // 优先用「GUI 当前显示的行」（视图+搜索过滤后）——Ray 定稿口径：按显示的材料列表收集
+        List<MaterialListEntry> displayed = displayedMaterialRows;
+        List<ItemStack> fromDisplayed = missingStacksFromRows(displayed);
+        if (!fromDisplayed.isEmpty()) {
+            expandCraftingIngredients(fromDisplayed, client);
+            return fromDisplayed;
         }
         List<MaterialListEntry> rows;
         try {
@@ -241,6 +261,13 @@ public class FillMaterialCalculator {
         } catch (Exception e) {
             return List.of();
         }
+        List<ItemStack> out = missingStacksFromRows(rows);
+        expandCraftingIngredients(out, client);
+        return out;
+    }
+
+    /** 行 → 缺失清单（missing>0 的行，count=缺失量）。 */
+    private static List<ItemStack> missingStacksFromRows(List<MaterialListEntry> rows) {
         List<ItemStack> out = new ArrayList<>();
         for (MaterialListEntry entry : rows) {
             if (entry == null || entry.getStack().isEmpty()) {
@@ -254,7 +281,6 @@ public class FillMaterialCalculator {
             want.setCount(missing);
             out.add(want);
         }
-        expandCraftingIngredients(out, client);
         return out;
     }
 

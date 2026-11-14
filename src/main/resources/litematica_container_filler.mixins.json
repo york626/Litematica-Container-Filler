@@ -16,6 +16,7 @@
     "InGameHudMixin",
     "GuiMainMenuMixin",
     "GuiMaterialListMixin",
+    "MixinWidgetListBaseCapture",
     "ButtonBaseAccessor",
     "WidgetContainerInvoker",
     "WidgetListMaterialListMixin",
