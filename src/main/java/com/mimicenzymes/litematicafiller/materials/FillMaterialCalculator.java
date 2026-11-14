@@ -330,18 +330,10 @@ public class FillMaterialCalculator {
                     if (need <= 0) {
                         continue;
                     }
-                    // ⚠️ 一级行已覆盖的原料不再叠加（Ray 2026-11-14：海晶砂粒行缺 4，
-                    // 又被别的行的配方展开加 1 ⇒ 拿了 5 个超量）。一级行是权威口径。
-                    boolean alreadyCovered = false;
-                    for (ItemStack w : wanted) {
-                        if (w.getItem() == options[0].getItem()) {
-                            alreadyCovered = true;
-                            break;
-                        }
-                    }
-                    if (alreadyCovered) {
-                        continue;
-                    }
+                    // ⚠️ 与一级行**叠加**是 Ray 2026-11-14 定稿（v1.16.8 撤销 v1.16.7 的去重）：
+                    // 「海晶灯之类需要二级材料正好一起拿过来，减少工作量少拿一次」——
+                    // 一级行缺 4 + 别的行配方还需 5 = 拿 9，海晶灯和砂粒一次备齐。
+                    // 身上已有的部分由服务端「收集够即止」统一扣（v1.16.6），不会重复堆。
                     // 减去身上已有（玩家背包 36 格）
                     int have = 0;
                     var inventory = client.player.getInventory();
