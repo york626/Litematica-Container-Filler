@@ -61,6 +61,7 @@ public final class BatchServerLink {
     public static final int ACTION_CLEAR = 0;
     public static final int ACTION_FILL_FULL = 1;
     public static final int ACTION_SCHEMATIC_FILL = 2;
+    public static final int ACTION_COLLECT_MISSING = 3;
 
     public static final int RESULT_DONE = 1;
     public static final int RESULT_NO_CONTAINER = 2;
@@ -161,9 +162,13 @@ public final class BatchServerLink {
             player.getServer().execute(() -> handle(payload, player));
         });
         ClientPlayNetworking.registerGlobalReceiver(Result.ID, (payload, context) ->
-                context.client().execute(() ->
-                        com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance()
-                                .onServerResult(payload.pos(), payload.status(), payload.missing())));
+                context.client().execute(() -> {
+                    // 【自动收集】的回包也走这条共享通道：pos 匹配最近一次收集请求才算它的
+                    com.mimicenzymes.litematicafiller.tool.AutoCollectController.getInstance()
+                            .onPossibleCollectResult(payload.pos(), payload.status(), payload.missing());
+                    com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance()
+                            .onServerResult(payload.pos(), payload.status(), payload.missing());
+                }));
     }
 
     /** 服务端有没有这条通道（单人 / 装了本模组的服务器 ⇒ true）。 */
@@ -176,6 +181,11 @@ public final class BatchServerLink {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** 【自动收集投影材料】发送（客户端长按触发；缺料清单来自材料列表「全部」视图缓存）。 */
+    public static void sendCollectMissing(BlockPos pos, List<ItemStack> missing) {
+        sendAction(pos, ACTION_COLLECT_MISSING, List.of(), missing);
     }
 
     public static void sendAction(BlockPos pos, int action, List<Target> targets, List<ItemStack> items) {
@@ -193,8 +203,15 @@ public final class BatchServerLink {
     private static void handle(Action payload, ServerPlayerEntity player) {
         long posLong = payload.pos();
         try {
-            if (!BatchToolState.isActive()
-                    || !Configs.ENABLE_MOD.getBooleanValue()
+            if (!Configs.ENABLE_MOD.getBooleanValue()) {
+                return;
+            }
+            if (payload.action() == ACTION_COLLECT_MISSING) {
+                // 【自动收集投影材料】独立闸（Ray 2026-11-14，参考 QC 的自动收集重写）：不依赖批量批激活
+                if (!Configs.AUTO_COLLECT_ENABLED.getBooleanValue()) {
+                    return;
+                }
+            } else if (!BatchToolState.isActive()
                     || !Configs.BATCH_TOOL_ENABLED.getBooleanValue()) {
                 return; // 批量已经结束/被取消：丢弃迟到请求
             }
@@ -215,6 +232,7 @@ public final class BatchServerLink {
                 case ACTION_CLEAR -> handleClear(posLong, player, inv);
                 case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv, payload.items());
                 case ACTION_SCHEMATIC_FILL -> handleSchematicFill(posLong, player, inv, payload.targets());
+                case ACTION_COLLECT_MISSING -> handleCollectMissing(posLong, player, inv, payload.items());
                 default -> sendResult(player, posLong, RESULT_FAILED, 0);
             }
         } catch (Throwable t) {
@@ -404,6 +422,82 @@ public final class BatchServerLink {
 
         inv.markDirty();
         sendResult(player, posLong, placedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
+    }
+
+    /**
+     * 【自动收集投影材料】（Ray 2026-11-14：「给 CF 加上 QC 的自动收集，认容器材料」）。
+     *
+     * <p>与 {@link #handleFillFull} 的差别：**按清单缺料数量塞**（清单说缺 1 个就塞 1 个，不是填满）。
+     * 数据源是客户端材料列表「全部」视图的缺失清单（含投影容器里的材料，{@code FillMaterialCalculator
+     * #getCurrentMissingForAutoCollect}）。取料链与填充完全共用：玩家背包 → 潜影盒/精妙背包补救（3 轮）。
+     * 服务端直连不经过光标 ⇒ 不需要 QC 那套「松开归还」逻辑。
+     */
+    private static void handleCollectMissing(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted) {
+        if (wanted == null || wanted.isEmpty()) {
+            sendResult(player, posLong, RESULT_NO_ITEM, 0);
+            return;
+        }
+        int missing = 0;
+        int collectedTotal = 0;
+        for (int round = 0; round < 3; round++) {
+            missing = 0;
+            collectedTotal = 0;
+            Map<String, Integer> needed = new LinkedHashMap<>();
+            for (ItemStack want : wanted) {
+                if (want.isEmpty()) {
+                    continue;
+                }
+                int have = 0;
+                int capacity = 0;
+                for (int i = 0; i < inv.size(); i++) {
+                    ItemStack cur = inv.getStack(i);
+                    int max = Math.min(want.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
+                    if (cur.isEmpty()) {
+                        capacity += max;
+                    } else if (ItemMatcher.isSameItem(cur, want) && cur.getCount() < max) {
+                        have += cur.getCount();
+                        capacity += max - cur.getCount();
+                    }
+                }
+                int need = want.getCount() - have;
+                if (need <= 0) {
+                    continue;
+                }
+                int toTake = Math.min(need, capacity);
+                int taken = toTake > 0 ? takeFromPlayer(player, want, toTake) : 0;
+                int placed = 0;
+                int toPlace = taken;
+                for (int i = 0; i < inv.size() && toPlace > 0; i++) {
+                    ItemStack cur = inv.getStack(i);
+                    int max = Math.min(want.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
+                    if (cur.isEmpty()) {
+                        int put = Math.min(toPlace, max);
+                        ItemStack putStack = want.copy();
+                        putStack.setCount(put);
+                        inv.setStack(i, putStack);
+                        toPlace -= put;
+                        placed += put;
+                    } else if (ItemMatcher.isSameItem(cur, want) && cur.getCount() < max) {
+                        int put = Math.min(toPlace, max - cur.getCount());
+                        cur.increment(put);
+                        toPlace -= put;
+                        placed += put;
+                    }
+                }
+                collectedTotal += placed;
+                int still = need - placed;
+                if (still > 0) {
+                    missing += still;
+                    needed.merge(RegistryKeyHelper.itemId(want), still, Integer::sum);
+                }
+            }
+            if (needed.isEmpty() || !rescueMissing(player, needed)) {
+                break;
+            }
+        }
+        inv.markDirty();
+        player.getInventory().markDirty();
+        sendResult(player, posLong, collectedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
     }
 
     /**

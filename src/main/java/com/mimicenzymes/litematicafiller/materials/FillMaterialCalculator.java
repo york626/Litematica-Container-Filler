@@ -204,6 +204,34 @@ public class FillMaterialCalculator {
         return materialList != null ? Math.max(1, materialList.getMultiplier()) : 1;
     }
 
+    /**
+     * 【自动收集投影材料】的数据源：取「全部视图」口径的缺失清单（**含投影容器里的材料**）。
+     *
+     * <p>口径说明：直接读 {@link #calculate(Object, boolean)} 算出来的 {@code itemStatsCache}
+     * （材料列表 GUI 打开/刷新时就会跑一遍）—— 缓存里的条目覆盖建筑方块 **和** 投影里容器的
+     * 内容（{@code containerMaterialKeys} 标记），与 Ray 在「显示类型：全部」看到的口径一致。
+     * ⚠️ 缓存没热（还没打开过材料列表）时返回空列表，调用方要提示先打开材料列表。
+     *
+     * @return 每个缺失条目一个 ItemStack（representative + count = 缺失数量）
+     */
+    public static List<ItemStack> getCurrentMissingForAutoCollect() {
+        if (itemStatsCache.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ItemStack> out = new ArrayList<>();
+        for (Map.Entry<ItemStackKey, ItemStats> e : itemStatsCache.entrySet()) {
+            ItemStats stats = e.getValue();
+            if (stats == null || stats.missingAll <= 0 || stats.representative.isEmpty()) {
+                continue;
+            }
+            ItemStack want = stats.representative.copy();
+            want.setCount(Math.min(stats.missingAll, stats.representative.getMaxCount() * 27));
+            out.add(want);
+        }
+        out.sort(java.util.Comparator.comparingInt(ItemStack::getCount).reversed());
+        return out;
+    }
+
     public static void requestMaterialReplacementRefresh() {
         seenGlobalReplacementVersion = MaterialReplacer.getGlobalReplacementVersion();
         seenSchematicReplacementVersion = MaterialReplacer.getSchematicReplacementVersion();

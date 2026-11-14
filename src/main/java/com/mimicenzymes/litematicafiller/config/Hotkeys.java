@@ -17,6 +17,8 @@ public class Hotkeys {
     public static final ConfigHotkey BATCH_TOOL_TRIGGER  = new ConfigHotkey("litematica_container_filler.hotkey.name.batchToolTrigger", "", "litematica_container_filler.hotkey.comment.batchToolTrigger");
     /** 批量工具取消（默认未绑定）。 */
     public static final ConfigHotkey BATCH_TOOL_CANCEL   = new ConfigHotkey("litematica_container_filler.hotkey.name.batchToolCancel", "", "litematica_container_filler.hotkey.comment.batchToolCancel");
+    /** 【自动收集投影材料】长按触发（Ray 2026-11-14：加到批量工具页；默认未绑定）。 */
+    public static final ConfigHotkey AUTO_COLLECT_TRIGGER = new ConfigHotkey("litematica_container_filler.hotkey.name.autoCollectTrigger", "", "litematica_container_filler.hotkey.comment.autoCollectTrigger");
 
     public static final List<ConfigHotkey> HOTKEY_LIST = ImmutableList.of(
             OPEN_CONFIG_GUI,
@@ -28,6 +30,7 @@ public class Hotkeys {
             CYCLE_MANUAL_OVERRIDE,
             CLEAR_MANUAL_OVERRIDES,
             BATCH_TOOL_TRIGGER,
-            BATCH_TOOL_CANCEL
+            BATCH_TOOL_CANCEL,
+            AUTO_COLLECT_TRIGGER
     );
 }

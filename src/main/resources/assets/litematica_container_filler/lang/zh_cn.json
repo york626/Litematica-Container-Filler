@@ -443,5 +443,9 @@
   "litematica_container_filler.config.option.batchFillItemMode.handheld": "手持物品",
   "litematica_container_filler.config.name.batchFillItemList": "填充物品列表",
   "litematica_container_filler.config.comment.batchFillItemList": "「填充容器」（物品列表模式）按这个顺序取用背包里的对应物品填容器。\n写物品 ID，例如 minecraft:cobblestone。列表里没有/背包里也没有的会跳过。",
-  "litematica_container_filler.message.batch_tool_out_of_material": "§e[批量工具] 材料用完了，已填 %s 个，剩 %s 个没填。"
+  "litematica_container_filler.message.batch_tool_out_of_material": "§e[批量工具] 材料用完了，已填 %s 个，剩 %s 个没填。",
+  "litematica_container_filler.config.name.autoCollectEnabled": "自动收集投影材料",
+  "litematica_container_filler.config.comment.autoCollectEnabled": "对准容器按住热键 0.5 秒：材料列表「全部」视图的缺失材料（含投影容器里的材料）自动从背包/潜影盒/精妙背包收进该容器。走服务端直连；单人或装了本模组的服务器可用。原 QuickCraft 自动收集的集中版。",
+  "litematica_container_filler.hotkey.name.autoCollectTrigger": "自动收集材料（按住）",
+  "litematica_container_filler.hotkey.comment.autoCollectTrigger": "对准容器按住 0.5 秒，把清单缺失材料（含容器材料）收进容器。松开即停。"
 }

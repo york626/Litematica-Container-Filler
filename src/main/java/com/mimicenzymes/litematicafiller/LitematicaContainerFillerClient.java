@@ -39,6 +39,8 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
         // 「批量工具」服务端直连快速通道（单人 / 装了本模组的服务器生效；别处自动回退点击路径）
         com.mimicenzymes.litematicafiller.network.BatchServerLink.register();
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.tick());
+        // 【自动收集投影材料】长按检测（Ray 2026-11-14）
+        ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.tool.AutoCollectController.getInstance().tick(client));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!isGuiAutoRegistered) {

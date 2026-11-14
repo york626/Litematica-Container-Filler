@@ -112,6 +112,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigOptionList BATCH_TOOL_RANGE            = new ConfigOptionList("litematica_container_filler.config.name.batchToolRange", BatchToolRange.SELECTION, "litematica_container_filler.config.comment.batchToolRange");
     /** 服务端放行"容器方块实体"的远距离右键（只对容器生效，普通方块仍按原版距离）。 */
     public static final ConfigBoolean BATCH_TOOL_FAR_REACH           = new ConfigBoolean("litematica_container_filler.config.name.batchToolFarReach", true, "litematica_container_filler.config.comment.batchToolFarReach");
+    //【自动收集投影材料】（Ray 2026-11-14：QC 功能集中到 CF，认容器材料；默认关防误触）
+    public static final ConfigBoolean AUTO_COLLECT_ENABLED           = new ConfigBoolean("litematica_container_filler.config.name.autoCollectEnabled", false, "litematica_container_filler.config.comment.autoCollectEnabled");
     /** 「填充容器」的取物模式：物品列表 / 手持物品（对齐打印机「填充」页）。 */
     public static final ConfigOptionList BATCH_FILL_ITEM_MODE        = new ConfigOptionList("litematica_container_filler.config.name.batchFillItemMode", BatchFillItemMode.BLOCKLIST, "litematica_container_filler.config.comment.batchFillItemMode");
     /** 「填充容器」物品列表模式用的物品 ID 列表（按顺序优先）。 */
@@ -237,7 +239,8 @@ public class Configs implements IConfigHandler {
                 BATCH_TOOL_RANGE,
                 BATCH_TOOL_FAR_REACH,
                 BATCH_FILL_ITEM_MODE,
-                BATCH_FILL_ITEM_LIST
+                BATCH_FILL_ITEM_LIST,
+                AUTO_COLLECT_ENABLED
         );
 
         RENDER_OPTIONS = ImmutableList.of(
