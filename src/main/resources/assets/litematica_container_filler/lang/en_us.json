@@ -445,5 +445,7 @@
   "litematica_container_filler.config.name.autoCollectEnabled": "Auto Collect Schematic Materials",
   "litematica_container_filler.config.comment.autoCollectEnabled": "Hold the hotkey (0.5s) while aiming at a container: missing materials from the material list (ALL view, incl. container materials) are collected FROM the container INTO your inventory — loose stacks by the exact missing count, shulker boxes holding wanted items as whole boxes. Stops safely when your inventory is full. Server-side direct link.",
   "litematica_container_filler.hotkey.name.autoCollectTrigger": "Auto Collect Materials (hold)",
-  "litematica_container_filler.hotkey.comment.autoCollectTrigger": "Hold 0.5s while aiming at a container to collect its missing schematic materials into your inventory."
+  "litematica_container_filler.hotkey.comment.autoCollectTrigger": "Hold 0.5s while aiming at a container to collect its missing schematic materials into your inventory.",
+  "litematica_container_filler.config.name.autoCollectSecondaryThreshold": "Auto Collect Secondary Threshold",
+  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "Only expand crafting ingredients for rows missing up to this many items. Rows missing more than this (e.g. 1198 hoppers needing ~6000 iron ingots) are collected as-is without their ingredients. Default 64."
 }

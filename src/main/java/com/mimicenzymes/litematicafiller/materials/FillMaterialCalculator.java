@@ -316,9 +316,16 @@ public class FillMaterialCalculator {
             sources.add(new SourceRow(want, want.getCount()));
         }
         List<ItemStack> additions = new ArrayList<>();
+        int secondaryThreshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
         for (SourceRow source : sources) {
-            ItemStack want = source.stack();
             int wantMissing = source.missing();
+            // 【二级展开阈值】（Ray 2026-11-14：漏斗缺 1198 的铁锭原料 6000 个塞爆背包）：
+            // 缺失量超过阈值的行不展开合成原料——巨量缺料走专门获取途径；小缺料（海晶灯缺 1）才合成备料。
+            // ⚠️ 只挡二级展开；一级行本体照常收集。
+            if (wantMissing > secondaryThreshold) {
+                continue;
+            }
+            ItemStack want = source.stack();
             for (var recipeEntry : crafting) {
                 var recipe = recipeEntry.value();
                 net.minecraft.item.ItemStack output;
