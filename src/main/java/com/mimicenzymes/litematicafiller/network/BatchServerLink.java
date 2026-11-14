@@ -62,6 +62,7 @@ public final class BatchServerLink {
     public static final int ACTION_FILL_FULL = 1;
     public static final int ACTION_SCHEMATIC_FILL = 2;
     public static final int ACTION_COLLECT_MISSING = 3;
+    public static final int ACTION_EXTRACT_MISSING = 4;
 
     public static final int RESULT_DONE = 1;
     public static final int RESULT_NO_CONTAINER = 2;
@@ -189,6 +190,11 @@ public final class BatchServerLink {
         sendAction(pos, ACTION_COLLECT_MISSING, List.of(), missing);
     }
 
+    /** 【提取二级材料】发送（客户端单击触发；缺料清单来自当前视图，方向＝背包→准星容器）。 */
+    public static void sendExtractMissing(BlockPos pos, List<ItemStack> missing) {
+        sendAction(pos, ACTION_EXTRACT_MISSING, List.of(), missing);
+    }
+
     public static void sendAction(BlockPos pos, int action, List<Target> targets, List<ItemStack> items) {
         try {
             ClientPlayNetworking.send(new Action(pos.asLong(), action, targets, items));
@@ -210,6 +216,11 @@ public final class BatchServerLink {
             if (payload.action() == ACTION_COLLECT_MISSING) {
                 // 【自动收集投影材料】独立闸（Ray 2026-11-14，参考 QC 的自动收集重写）：不依赖批量批激活
                 if (!Configs.AUTO_COLLECT_ENABLED.getBooleanValue()) {
+                    return;
+                }
+            } else if (payload.action() == ACTION_EXTRACT_MISSING) {
+                // 【提取二级材料】独立闸（Ray 2026-11-14：工具箱的提取功能集中到 CF；不依赖批量批激活）
+                if (!Configs.EXTRACT_SECONDARY_ENABLED.getBooleanValue()) {
                     return;
                 }
             } else if (!BatchToolState.isActive()
@@ -249,6 +260,7 @@ public final class BatchServerLink {
                 case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv, payload.items());
                 case ACTION_SCHEMATIC_FILL -> handleSchematicFill(posLong, player, inv, payload.targets());
                 case ACTION_COLLECT_MISSING -> handleCollectToPlayer(posLong, player, inv, payload.items());
+                case ACTION_EXTRACT_MISSING -> handleExtractMissing(posLong, player, inv, payload.items());
                 default -> sendResult(player, posLong, RESULT_FAILED, 0);
             }
         } catch (Throwable t) {
@@ -617,6 +629,81 @@ public final class BatchServerLink {
     }
 
     private static boolean backpackFullFlag;
+
+    /**
+     * 【提取二级材料】（Ray 2026-11-14：工具箱的「提取二级材料到当前容器」集中到 CF，**服务端直连升级**）。
+     *
+     * <p>方向与 {@link #handleCollectToPlayer} 相反：**玩家背包 → 准星容器**，按清单缺量塞
+     * （工具箱原版是客户端点击逐格搬，CF 直连一次到位、不闪界面）。身上没有的跳过（不凭空生成）；
+     * 容器塞不下留身上（不丢）。取料链共用：背包 → 潜影盒/精妙背包补救（3 轮）。
+     */
+    private static void handleExtractMissing(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted) {
+        if (wanted == null || wanted.isEmpty()) {
+            sendResult(player, posLong, RESULT_NO_ITEM, 0);
+            return;
+        }
+        int missing = 0;
+        int extractedTotal = 0;
+        for (int round = 0; round < 3; round++) {
+            missing = 0;
+            extractedTotal = 0;
+            Map<String, Integer> needed = new LinkedHashMap<>();
+            for (ItemStack want : wanted) {
+                if (want.isEmpty()) {
+                    continue;
+                }
+                int have = 0;
+                int capacity = 0;
+                for (int i = 0; i < inv.size(); i++) {
+                    ItemStack cur = inv.getStack(i);
+                    int max = Math.min(want.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
+                    if (cur.isEmpty()) {
+                        capacity += max;
+                    } else if (ItemMatcher.isSameItem(cur, want) && cur.getCount() < max) {
+                        have += cur.getCount();
+                        capacity += max - cur.getCount();
+                    }
+                }
+                int need = want.getCount() - have;
+                if (need <= 0) {
+                    continue;
+                }
+                int toTake = Math.min(need, capacity);
+                int taken = toTake > 0 ? takeFromPlayer(player, want, toTake) : 0;
+                int placed = 0;
+                int toPlace = taken;
+                for (int i = 0; i < inv.size() && toPlace > 0; i++) {
+                    ItemStack cur = inv.getStack(i);
+                    int max = Math.min(want.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
+                    if (cur.isEmpty()) {
+                        int put = Math.min(toPlace, max);
+                        ItemStack putStack = want.copy();
+                        putStack.setCount(put);
+                        inv.setStack(i, putStack);
+                        toPlace -= put;
+                        placed += put;
+                    } else if (ItemMatcher.isSameItem(cur, want) && cur.getCount() < max) {
+                        int put = Math.min(toPlace, max - cur.getCount());
+                        cur.increment(put);
+                        toPlace -= put;
+                        placed += put;
+                    }
+                }
+                extractedTotal += placed;
+                int still = need - placed;
+                if (still > 0) {
+                    missing += still;
+                    needed.merge(RegistryKeyHelper.itemId(want), still, Integer::sum);
+                }
+            }
+            if (needed.isEmpty() || !rescueMissing(player, needed)) {
+                break;
+            }
+        }
+        inv.markDirty();
+        player.getInventory().markDirty();
+        sendResult(player, posLong, extractedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
+    }
 
     /** 容器物品（潜影盒/收纳袋）的内容里有没有清单缺料。 */
     private static boolean mimic(ItemStack stack, Map<Item, Integer> wantedCount) {

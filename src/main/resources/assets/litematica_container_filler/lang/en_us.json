@@ -447,5 +447,9 @@
   "litematica_container_filler.hotkey.name.autoCollectTrigger": "Auto Collect Materials (hold)",
   "litematica_container_filler.hotkey.comment.autoCollectTrigger": "Hold 0.5s while aiming at a container to collect its missing schematic materials into your inventory.",
   "litematica_container_filler.config.name.autoCollectSecondaryThreshold": "Auto Collect Secondary Threshold",
-  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "Only expand crafting ingredients for rows missing up to this many items. Rows missing more than this (e.g. 1198 hoppers needing ~6000 iron ingots) are collected as-is without their ingredients. Default 64."
+  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "Only expand crafting ingredients for rows missing up to this many items. Rows missing more than this (e.g. 1198 hoppers needing ~6000 iron ingots) are collected as-is without their ingredients. Default 64.",
+  "litematica_container_filler.config.name.extractSecondaryEnabled": "Extract Secondary Materials",
+  "litematica_container_filler.config.comment.extractSecondaryEnabled": "Press the hotkey while aiming at a container: missing materials from the material list (current view + crafting ingredients) are pulled from your inventory / shulker boxes / Sophisticated Backpacks into that container. Server-side direct link. This is the migrated QuickCraft-style extract, direction reversed from Auto Collect.",
+  "litematica_container_filler.hotkey.name.extractSecondaryTrigger": "Extract Secondary Materials (press)",
+  "litematica_container_filler.hotkey.comment.extractSecondaryTrigger": "Press once while aiming at a container to fill it with the missing materials (current view + crafting ingredients) from your inventory."
 }

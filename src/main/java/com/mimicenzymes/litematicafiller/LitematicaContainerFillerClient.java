@@ -41,6 +41,8 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.compat.sbp.SbpBridge.tick());
         // 【自动收集投影材料】长按检测（Ray 2026-11-14）
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.tool.AutoCollectController.getInstance().tick(client));
+        // 【提取二级材料】单击检测（Ray 2026-11-14：工具箱提取功能集中到 CF，服务端直连版）
+        ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.tool.AutoCollectController.getInstance().tickExtract(client));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!isGuiAutoRegistered) {

@@ -49,6 +49,9 @@ public final class AutoCollectController {
     private int holdTicks;
     private int cooldownTicks;
     private boolean fired;
+    /** 【提取二级材料】热键的上一次按住状态（边沿检测：松开→按下 = 触发一次）。 */
+    private boolean extractPrevHeld;
+    private int extractCooldownTicks;
     /** 最近一次收集请求的目标与发送 tick（回包 pos 匹配才算，避免和批量结果串音）。 */
     private long lastSentPos = Long.MIN_VALUE;
     private long lastSentTick = Long.MIN_VALUE;
@@ -58,6 +61,66 @@ public final class AutoCollectController {
     }
 
     private AutoCollectController() {
+    }
+
+    /**
+     * 【提取二级材料】（Ray 2026-11-14：工具箱的「提取二级材料到当前容器」集中到 CF，服务端直连升级）：
+     * **单击热键触发**（准星对目标容器）：清单缺失材料（当前视图+二级展开）从玩家背包/
+     * 潜影盒/精妙背包塞进准星容器——与 {@link #tick} 的收集（容器→背包）方向互补。
+     */
+    public void tickExtract(MinecraftClient client) {
+        if (extractCooldownTicks > 0) {
+            extractCooldownTicks--;
+        }
+        if (!Configs.EXTRACT_SECONDARY_ENABLED.getBooleanValue()
+                || !Configs.ENABLE_MOD.getBooleanValue()
+                || client.player == null) {
+            extractPrevHeld = false;
+            return;
+        }
+        boolean held = Hotkeys.EXTRACT_SECONDARY_TRIGGER.getKeybind().isKeybindHeld();
+        // **按下沿**触发一次（单击语义；长按不重复）
+        if (!held) {
+            extractPrevHeld = false;
+            return;
+        }
+        if (extractPrevHeld || extractCooldownTicks > 0) {
+            return;
+        }
+        extractPrevHeld = true;
+        extractCooldownTicks = 10;
+        triggerExtract(client);
+    }
+
+    private void triggerExtract(MinecraftClient client) {
+        if (!(client.crosshairTarget instanceof net.minecraft.util.hit.BlockHitResult hit)
+                || hit.getType() != net.minecraft.util.hit.HitResult.Type.BLOCK) {
+            actionbar(client, "请把准星对准目标容器再按");
+            return;
+        }
+        net.minecraft.util.math.BlockPos pos = hit.getBlockPos();
+        if (!BatchServerLink.isSupported()) {
+            actionbar(client, "服务端通道不可用（单人/装本模组的服务器才能用）");
+            return;
+        }
+        List<ItemStack> missing = FillMaterialCalculator.getCurrentMissingForAutoCollect();
+        if (missing.isEmpty()) {
+            actionbar(client, "当前视图没有缺失材料（材料列表切到容器/全部后收集量会跟着变）");
+            return;
+        }
+        try {
+            BatchServerLink.sendExtractMissing(pos, missing);
+            StringBuilder detail = new StringBuilder();
+            for (ItemStack want : missing) {
+                if (!detail.isEmpty()) detail.append(", ");
+                detail.append(net.minecraft.registry.Registries.ITEM.getId(want.getItem()).getPath()).append('×').append(want.getCount());
+            }
+            actionbar(client, "提取已发出：" + missing.size() + " 种缺失材料 ← 背包塞进准星容器");
+            LOGGER.info("[auto-collect] 提取二级材料：目标 {}，{} 种：{}", pos.toShortString(), missing.size(), detail);
+        } catch (Throwable t2) {
+            LOGGER.warn("[auto-collect] 提取发送失败", t2);
+            actionbar(client, "发送失败（详见日志）");
+        }
     }
 
     /** 由客户端入口每 tick 调用。 */

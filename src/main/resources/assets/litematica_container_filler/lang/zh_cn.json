@@ -449,5 +449,9 @@
   "litematica_container_filler.hotkey.name.autoCollectTrigger": "自动收集材料（按住）",
   "litematica_container_filler.hotkey.comment.autoCollectTrigger": "对准容器按住 0.5 秒，把清单缺料从容器收进玩家背包（散装按缺量、盒装整盒）。背包满自动停。",
   "litematica_container_filler.config.name.autoCollectSecondaryThreshold": "二级展开阈值",
-  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "缺失量不超过此值的行才展开合成原料（例如漏斗缺 1198 个需要 6000 铁锭，就不会展开它的原料）。小缺料（如海晶灯缺 1）照常展开。默认 64。"
+  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "缺失量不超过此值的行才展开合成原料（例如漏斗缺 1198 个需要 6000 铁锭，就不会展开它的原料）。小缺料（如海晶灯缺 1）照常展开。默认 64。",
+  "litematica_container_filler.config.name.extractSecondaryEnabled": "提取二级材料",
+  "litematica_container_filler.config.comment.extractSecondaryEnabled": "对准容器按一下热键：材料列表当前视图的缺失材料（含二级原料）自动从背包/潜影盒/精妙背包塞进该容器。走服务端直连；单人或装了本模组的服务器可用。原工具箱「提取二级材料到当前容器」的集中版（方向与自动收集相反：背包→容器）。",
+  "litematica_container_filler.hotkey.name.extractSecondaryTrigger": "提取二级材料（按一下）",
+  "litematica_container_filler.hotkey.comment.extractSecondaryTrigger": "对准容器按一下，把当前视图缺失材料（含二级原料）从背包塞进该容器。"
 }

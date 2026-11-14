@@ -101,6 +101,7 @@ public class GuiConfigs extends GuiConfigsBase {
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_TRIGGER));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_CANCEL));
                 list.add(new ConfigOptionWrapper(Hotkeys.AUTO_COLLECT_TRIGGER));
+                list.add(new ConfigOptionWrapper(Hotkeys.EXTRACT_SECONDARY_TRIGGER));
             }
             case RENDER -> Configs.RENDER_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
             case HOTKEYS -> Hotkeys.HOTKEY_LIST.forEach(h -> list.add(new ConfigOptionWrapper(h)));
