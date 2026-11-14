@@ -447,6 +447,14 @@ public final class BatchServerLink {
      * </ul>
      */
     private static void handleCollectToPlayer(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted) {
+        try {
+            StringBuilder detail = new StringBuilder();
+            for (ItemStack want : wanted) {
+                if (!detail.isEmpty()) detail.append(", ");
+                detail.append(net.minecraft.registry.Registries.ITEM.getId(want.getItem()).getPath()).append('×').append(want.getCount());
+            }
+            LOGGER.info("[auto-collect] 服务端收到清单：{}", detail);
+        } catch (Throwable ignored) {}
         if (wanted == null || wanted.isEmpty()) {
             sendResult(player, posLong, RESULT_NO_ITEM, 0);
             return;

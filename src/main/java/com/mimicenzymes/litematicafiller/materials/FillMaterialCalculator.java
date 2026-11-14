@@ -254,7 +254,87 @@ public class FillMaterialCalculator {
             want.setCount(missing);
             out.add(want);
         }
+        expandCraftingIngredients(out, client);
         return out;
+    }
+
+    /**
+     * 二级材料展开（Ray 2026-11-14：「萤石粉也闪烁了，是需要拿的材料为什么没拿过来」）：
+     * 材料列表行右侧的合成提示（例：海晶石砖 1 ← 萤石粉 + 蓝色染料）里的**原料**也是要收集的。
+     * 对每个缺失行找它的合成配方，按「缺失量 ÷ 单次产量」向上取整折算原料量，**再减去身上已有**
+     * （玩家背包 36 格）——身上够的部分不重复收。只展开一层（原料不再递归）。
+     */
+    private static void expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client) {
+        if (wanted.isEmpty() || client.player == null || client.player.networkHandler == null) {
+            return;
+        }
+        var recipeManager = client.player.networkHandler.getRecipeManager();
+        var registryLookup = client.player.getWorld().getRegistryManager();
+        // ⚠️ 1.21.1 的 getAllOfType 是 private ⇒ 用公开的 values() 全集再按类型过滤
+        List<net.minecraft.recipe.RecipeEntry<net.minecraft.recipe.CraftingRecipe>> crafting = new ArrayList<>();
+        for (var entry : recipeManager.values()) {
+            if (entry.value() instanceof net.minecraft.recipe.CraftingRecipe cr) {
+                crafting.add(new net.minecraft.recipe.RecipeEntry<>(entry.id(), cr));
+            }
+        }
+        List<ItemStack> additions = new ArrayList<>();
+        for (ItemStack want : List.copyOf(wanted)) {
+            for (var recipeEntry : crafting) {
+                var recipe = recipeEntry.value();
+                net.minecraft.item.ItemStack output;
+                try {
+                    output = recipe.getResult(registryLookup);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (output.isEmpty() || output.getItem() != want.getItem()) {
+                    continue;
+                }
+                int outPerCraft = Math.max(1, output.getCount());
+                int times = (int) Math.ceil((double) want.getCount() / outPerCraft);
+                for (net.minecraft.recipe.Ingredient ingredient : recipe.getIngredients()) {
+                    if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
+                        continue;
+                    }
+                    ItemStack[] options = ingredient.getMatchingStacks();
+                    if (options == null || options.length == 0 || options[0].isEmpty()) {
+                        continue;
+                    }
+                    int need = options[0].getCount() * times;
+                    if (need <= 0) {
+                        continue;
+                    }
+                    // 减去身上已有（玩家背包 36 格）
+                    int have = 0;
+                    var inventory = client.player.getInventory();
+                    for (int i = 0; i < inventory.size(); i++) {
+                        ItemStack inSlot = inventory.getStack(i);
+                        if (!inSlot.isEmpty() && inSlot.getItem() == options[0].getItem()) {
+                            have += inSlot.getCount();
+                        }
+                    }
+                    need = Math.max(0, need - have);
+                    if (need > 0) {
+                        additions.add(new ItemStack(options[0].getItem(), need));
+                    }
+                }
+                break; // 每行只按第一条匹配配方展开
+            }
+        }
+        // 追加进清单（同物品合并）
+        for (ItemStack add : additions) {
+            boolean merged = false;
+            for (ItemStack w : wanted) {
+                if (w.getItem() == add.getItem()) {
+                    w.increment(add.getCount());
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                wanted.add(add);
+            }
+        }
     }
 
     public static void requestMaterialReplacementRefresh() {

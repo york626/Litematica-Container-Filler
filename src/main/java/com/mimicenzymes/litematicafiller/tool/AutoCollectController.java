@@ -115,7 +115,12 @@ public final class AutoCollectController {
         try {
             BatchServerLink.sendCollectMissing(pos, missing);
             actionbar(client, "自动收集已发出：" + missing.size() + " 种缺失材料 ← 准星容器收进背包");
-            LOGGER.info("[auto-collect] 已发送收集请求：目标 {}，{} 种缺料（容器→背包）", pos.toShortString(), missing.size());
+            StringBuilder detail = new StringBuilder();
+            for (ItemStack want : missing) {
+                if (!detail.isEmpty()) detail.append(", ");
+                detail.append(net.minecraft.registry.Registries.ITEM.getId(want.getItem()).getPath()).append('×').append(want.getCount());
+            }
+            LOGGER.info("[auto-collect] 已发送收集请求：目标 {}，{} 种缺料（容器→背包）：{}", pos.toShortString(), missing.size(), detail);
         } catch (Throwable t) {
             LOGGER.warn("[auto-collect] 发送失败", t);
             actionbar(client, "发送失败（详见日志）");
