@@ -437,8 +437,10 @@ public final class BatchServerLink {
      * <h2>规则</h2>
      * <ul>
      *   <li><b>散装缺料</b>：容器里的物品是清单缺料 ⇒ 按**清单缺量**拿（缺 2 拿 2，不超拿），放回**容器**不丢；</li>
-     *   <li><b>盒装缺料</b>：容器里装着缺料的潜影盒/收纳袋 ⇒ **整盒收进背包**（交给快捷潜影盒开盒），
-     *       空/无关的盒子不动；</li>
+     *   <li><b>盒装缺料</b>（v1.16.3 改）：容器里装着缺料的潜影盒/收纳袋 ⇒ **原地开盒取量**——
+     *       直接从盒内容拿清单缺的量放进背包，盒子（剩余内容）留在容器原位。
+     *       QC 要「先搬背包→提取→放回」是因为它走客户端点击（容器里的盒子打不开）；
+     *       CF 服务端直连可以直接改盒内容 ⇒ 不搬、不闪界面；</li>
      *   <li>⛔ **只收不吐**：玩家背包/身上已收集好的东西一律不动（反向后天然成立）；</li>
      *   <li><b>背包满保护</b>：放不下就立即停 + 回报 {@link #RESULT_BACKPACK_FULL}，
      *       已收的保留、没收的留在容器（绝不 offerOrDrop 丢东西）。</li>
@@ -460,20 +462,19 @@ public final class BatchServerLink {
         int collectedSlots = 0;
         int collectedItems = 0;
         boolean backpackFull = false;
+        backpackFullFlag = false;
         for (int i = 0; i < inv.size() && !backpackFull; i++) {
             ItemStack stack = inv.getStack(i);
             if (stack == null || stack.isEmpty()) {
                 continue;
             }
-            // 盒装：潜影盒/收纳袋内容含任一缺料 ⇒ 整盒收
+            // 盒装：潜影盒/收纳袋内容含缺料 ⇒ **原地开盒取量**（盒子留在容器原位）
             if (mimic(stack, wantedCount)) {
-                if (player.getInventory().insertStack(stack.copy())) {
-                    inv.setStack(i, ItemStack.EMPTY);
+                int takenFromBox = mimic(stack, wantedCount, player);
+                if (takenFromBox > 0) {
                     inv.markDirty();
                     collectedSlots++;
-                    collectedItems++;
-                } else {
-                    backpackFull = true;
+                    collectedItems += takenFromBox;
                 }
                 continue;
             }
@@ -502,6 +503,9 @@ public final class BatchServerLink {
         }
         inv.markDirty();
         player.getInventory().markDirty();
+        if (backpackFullFlag) {
+            backpackFull = true;
+        }
         if (backpackFull && collectedItems == 0) {
             sendResult(player, posLong, RESULT_BACKPACK_FULL, 0);
         } else if (backpackFull) {
@@ -512,6 +516,70 @@ public final class BatchServerLink {
             sendResult(player, posLong, RESULT_DONE, collectedItems);
         }
     }
+
+    /**
+     * 原地开盒取料：从 {@code stack}（潜影盒/收纳袋）的内容里按缺量取，直接给玩家背包；
+     * 盒子留在原地（剩余内容写回 CONTAINER 组件）。背包放不下 ⇒ 停止拿取、绝不丢。
+     *
+     * @return 实际取走的总个数（0 = 盒里没有可取的/背包满）
+     */
+    private static int mimic(ItemStack stack, Map<Item, Integer> wantedCount,
+                                                   ServerPlayerEntity player) {
+        net.minecraft.component.type.ContainerComponent comp =
+                stack.get(net.minecraft.component.DataComponentTypes.CONTAINER);
+        if (comp == null) {
+            return 0;
+        }
+        List<ItemStack> contents = new ArrayList<>();
+        for (ItemStack inner : comp.iterateNonEmpty()) {
+            contents.add(inner.copy());
+        }
+        int takenTotal = 0;
+        boolean changed = false;
+        for (int ci = 0; ci < contents.size(); ci++) {
+            ItemStack inner = contents.get(ci);
+            if (inner.isEmpty()) {
+                continue;
+            }
+            Integer stillNeeded = wantedCount.get(inner.getItem());
+            if (stillNeeded == null || stillNeeded <= 0) {
+                continue;
+            }
+            int take = Math.min(stillNeeded, inner.getCount());
+            int got = 0;
+            for (int k = 0; k < take; k++) {
+                ItemStack one = inner.copy();
+                one.setCount(1);
+                if (player.getInventory().insertStack(one)) {
+                    got++;
+                } else {
+                    backpackFullFlag = true;
+                    break;
+                }
+            }
+            if (got > 0) {
+                takenTotal += got;
+                wantedCount.merge(inner.getItem(), -got, Integer::sum);
+                changed = true;
+                int rest = inner.getCount() - got;
+                if (rest <= 0) {
+                    contents.set(ci, ItemStack.EMPTY);
+                } else {
+                    inner.setCount(rest);
+                }
+            }
+            if (backpackFullFlag) {
+                break;
+            }
+        }
+        if (changed) {
+            stack.set(net.minecraft.component.DataComponentTypes.CONTAINER,
+                    net.minecraft.component.type.ContainerComponent.fromStacks(contents));
+        }
+        return takenTotal;
+    }
+
+    private static boolean backpackFullFlag;
 
     /** 容器物品（潜影盒/收纳袋）的内容里有没有清单缺料。 */
     private static boolean mimic(ItemStack stack, Map<Item, Integer> wantedCount) {
