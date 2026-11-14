@@ -240,7 +240,7 @@ public class FillMaterialCalculator {
         List<MaterialListEntry> displayed = displayedMaterialRows;
         List<ItemStack> fromDisplayed = missingStacksFromRows(displayed);
         if (!fromDisplayed.isEmpty()) {
-            expandCraftingIngredients(fromDisplayed, client);
+            expandCraftingIngredients(fromDisplayed, client, getVanillaMissingRows(materialList, client));
             return fromDisplayed;
         }
         List<MaterialListEntry> rows;
@@ -262,8 +262,24 @@ public class FillMaterialCalculator {
             return List.of();
         }
         List<ItemStack> out = missingStacksFromRows(rows);
-        expandCraftingIngredients(out, client);
+        expandCraftingIngredients(out, client, getVanillaMissingRows(materialList, client));
         return out;
+    }
+
+    /**
+     * 原生清单的缺失行（建筑方块等）——**二级展开的源**：Ray 2026-11-14（v1.16.11）：
+     * 「海晶灯之类需要二级材料正好一起拿过来」——海晶灯行在容器视图里不显示，
+     * 但它的原料（海晶晶体 5 个）要备 ⇒ 展开源必须包含原生缺失行。
+     * ⚠️ 这些行**本体不收**（海晶灯方块是放置用的建筑方块，不是收集目标），只展开原料。
+     */
+    private static List<MaterialListEntry> getVanillaMissingRows(MaterialListBase materialList, MinecraftClient client) {
+        try {
+            fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                    materialList.getMaterialsAll(), client.player);
+            return materialList.getMaterialsMissingOnly(true);
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     /** 行 → 缺失清单（missing>0 的行，count=缺失量）。 */
@@ -290,7 +306,8 @@ public class FillMaterialCalculator {
      * 对每个缺失行找它的合成配方，按「缺失量 ÷ 单次产量」向上取整折算原料量，**再减去身上已有**
      * （玩家背包 36 格）——身上够的部分不重复收。只展开一层（原料不再递归）。
      */
-    private static void expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client) {
+    private static void expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client,
+                                                  List<MaterialListEntry> extraSourceRows) {
         if (wanted.isEmpty() || client.player == null || client.player.networkHandler == null) {
             return;
         }
@@ -303,8 +320,25 @@ public class FillMaterialCalculator {
                 crafting.add(new net.minecraft.recipe.RecipeEntry<>(entry.id(), cr));
             }
         }
+        // 展开源 = 已在清单里的行 + 原生缺失行（海晶灯这类建筑方块行：只展开原料、本体不收）
+        record SourceRow(ItemStack stack, int missing) {}
+        List<SourceRow> sources = new ArrayList<>();
+        for (ItemStack want : wanted) {
+            sources.add(new SourceRow(want, want.getCount()));
+        }
+        if (extraSourceRows != null) {
+            for (MaterialListEntry entry : extraSourceRows) {
+                if (entry == null || entry.getStack().isEmpty()) continue;
+                int missing = Math.max(0, entry.getCountMissing());
+                if (missing > 0) {
+                    sources.add(new SourceRow(entry.getStack(), missing));
+                }
+            }
+        }
         List<ItemStack> additions = new ArrayList<>();
-        for (ItemStack want : List.copyOf(wanted)) {
+        for (SourceRow source : sources) {
+            ItemStack want = source.stack();
+            int wantMissing = source.missing();
             for (var recipeEntry : crafting) {
                 var recipe = recipeEntry.value();
                 net.minecraft.item.ItemStack output;
@@ -317,7 +351,7 @@ public class FillMaterialCalculator {
                     continue;
                 }
                 int outPerCraft = Math.max(1, output.getCount());
-                int times = (int) Math.ceil((double) want.getCount() / outPerCraft);
+                int times = (int) Math.ceil((double) wantMissing / outPerCraft);
                 for (net.minecraft.recipe.Ingredient ingredient : recipe.getIngredients()) {
                     if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
                         continue;
