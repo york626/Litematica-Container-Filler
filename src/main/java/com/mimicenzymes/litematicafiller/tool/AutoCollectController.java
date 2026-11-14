@@ -28,9 +28,10 @@ import java.util.List;
  *   <li>**背包满保护**：塞不下立即停 + 提示清理背包（已收保留、没收的留在容器，绝不丢）。</li>
  * </ul>
  *
- * <h2>数据源口径</h2>
- * <p>{@link FillMaterialCalculator#getCurrentMissingForAutoCollect()} = 材料列表「显示类型：全部」
- * 的缺失清单（含容器材料）。⚠️ 缓存在材料列表 GUI 打开/刷新时才热 —— 没开过 ⇒ 提示先按 M。
+ * <h2>数据源口径（v1.16.2 起**跟随材料列表当前视图**）</h2>
+ * <p>{@link FillMaterialCalculator#getCurrentMissingForAutoCollect()}：容器视图 ⇒ 按容器清单收；
+ * 全部视图 ⇒ 按原生+容器合并收；建筑方块视图 ⇒ 只收原生。切视图再收集，量自动跟着变
+ * （Ray 例：容器视图海晶砂粒 4/碎片 4、全部视图 12/12）。
  *
  * <h2>为什么一次发送而不是按住持续发</h2>
  * <p>QC 用客户端点击只能一格一格点（必须按住分批）；CF 服务端直连一次把 3 轮补救全做完，
@@ -107,7 +108,7 @@ public final class AutoCollectController {
         // ③ 清单缓存要热（材料列表打开/刷新过）
         List<ItemStack> missing = FillMaterialCalculator.getCurrentMissingForAutoCollect();
         if (missing.isEmpty()) {
-            actionbar(client, "没有可收集的缺失材料（先按 M 打开材料列表让它刷新，或材料已齐）");
+            actionbar(client, "当前视图没有缺失材料（材料列表切到容器/全部后收集量会跟着变）");
             return;
         }
         // ④ 发送（服务端：背包 → 潜影盒/精妙背包补救 → 塞准星容器）

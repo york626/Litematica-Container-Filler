@@ -205,30 +205,55 @@ public class FillMaterialCalculator {
     }
 
     /**
-     * 【自动收集投影材料】的数据源：取「全部视图」口径的缺失清单（**含投影容器里的材料**）。
+     * 【自动收集投影材料】的数据源（Ray 2026-11-14 定稿：**跟随材料列表当前视图**）。
      *
-     * <p>口径说明：直接读 {@link #calculate(Object, boolean)} 算出来的 {@code itemStatsCache}
-     * （材料列表 GUI 打开/刷新时就会跑一遍）—— 缓存里的条目覆盖建筑方块 **和** 投影里容器的
-     * 内容（{@code containerMaterialKeys} 标记），与 Ray 在「显示类型：全部」看到的口径一致。
-     * ⚠️ 缓存没热（还没打开过材料列表）时返回空列表，调用方要提示先打开材料列表。
+     * <ul>
+     *   <li>{@code listMode == 1}（容器视图）⇒ 按 {@link #getCustomMaterialList} 的缺失收（Ray 例：海晶砂粒 4+碎片 4=8）；</li>
+     *   <li>{@code listMode == 2}（全部）⇒ 按「原生缺失 + 容器缺失」合并收（Ray 例：砂粒 8+4=12）；</li>
+     *   <li>{@code listMode == 0}（建筑方块）⇒ 只收原生清单的缺失。</li>
+     * </ul>
      *
-     * @return 每个缺失条目一个 ItemStack（representative + count = 缺失数量）
+     * <p>口径与 GUI 显示完全一致（同一套行数据），切视图再收集 ⇒ 量自动跟着变。
+     * ⚠️ 材料列表没打开过时 {@code getMaterialsMissingOnly} 也能算（实时重算 available），
+     * 但容器视图的缓存（{@code itemStatsCache}）要 GUI 刷新过才有 —— 没开过 ⇒ 容器部分为空。
      */
     public static List<ItemStack> getCurrentMissingForAutoCollect() {
-        if (itemStatsCache.isEmpty()) {
-            return Collections.emptyList();
+        MinecraftClient client = MinecraftClient.getInstance();
+        MaterialListBase materialList = DataManager.getMaterialList();
+        if (client.player == null || materialList == null) {
+            return List.of();
+        }
+        List<MaterialListEntry> rows;
+        try {
+            if (listMode == 1) {
+                rows = getCustomMaterialList(materialList);
+            } else if (listMode == 2) {
+                List<MaterialListEntry> vanilla;
+                fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                        materialList.getMaterialsAll(), client.player);
+                vanilla = materialList.getMaterialsMissingOnly(true);
+                rows = mergeLists(vanilla, getCustomMaterialList(materialList));
+            } else {
+                fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                        materialList.getMaterialsAll(), client.player);
+                rows = materialList.getMaterialsMissingOnly(true);
+            }
+        } catch (Exception e) {
+            return List.of();
         }
         List<ItemStack> out = new ArrayList<>();
-        for (Map.Entry<ItemStackKey, ItemStats> e : itemStatsCache.entrySet()) {
-            ItemStats stats = e.getValue();
-            if (stats == null || stats.missingAll <= 0 || stats.representative.isEmpty()) {
+        for (MaterialListEntry entry : rows) {
+            if (entry == null || entry.getStack().isEmpty()) {
                 continue;
             }
-            ItemStack want = stats.representative.copy();
-            want.setCount(Math.min(stats.missingAll, stats.representative.getMaxCount() * 27));
+            int missing = Math.max(0, entry.getCountMissing());
+            if (missing <= 0) {
+                continue;
+            }
+            ItemStack want = entry.getStack().copy();
+            want.setCount(missing);
             out.add(want);
         }
-        out.sort(java.util.Comparator.comparingInt(ItemStack::getCount).reversed());
         return out;
     }
 
