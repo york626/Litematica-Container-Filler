@@ -191,9 +191,17 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             List<MaterialListEntry> targetList = mimic_buildTargetList();
 
+            // ⛔ 同 injectSilently：API 注入路径也要保原生行（v1.16.15 污染修复）
+            java.util.List<MaterialListEntry> writeBack = new java.util.ArrayList<>(mimic_cachedVanillaList);
+            for (MaterialListEntry entry : targetList) {
+                if (entry != null && !writeBack.contains(entry)) {
+                    writeBack.add(entry);
+                }
+            }
+
             mimic_isInjecting = true;
             try {
-                iMatList.setMaterialListEntries(targetList);
+                iMatList.setMaterialListEntries(writeBack);
             } finally {
                 mimic_isInjecting = false;
             }
@@ -208,7 +216,20 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
     @SuppressWarnings("unchecked")
     private void mimic_injectSilently() {
         if (!Configs.ENABLE_MOD.getBooleanValue()) return;
-        if (FillMaterialCalculator.listMode == 0) return;
+        if (FillMaterialCalculator.listMode == 0) {
+            // ⛔ **方块视图：恢复原生行**（v1.16.15，Ray 报「方块视图平滑石英块显示 1 而不是 697」）：
+            // 之前容器/全部视图注入时把过滤后的行写回了 materialListAll，**697 行的原生数据被覆盖丢失**；
+            // 切回方块视图时读到的就是被污染的数据。现在切视图时把原生行写回去，数据不再丢。
+            if (mimic_cachedVanillaList != null && !mimic_cachedVanillaList.isEmpty()) {
+                try {
+                    mimic_writeMaterialListAll(ImmutableList.copyOf(mimic_cachedVanillaList));
+                    materialList.refreshPreFilteredList();
+                    materialList.updateCounts();
+                    mimic_lastInjectedRef = mimic_readMaterialListAll();
+                } catch (Exception ignored) {}
+            }
+            return;
+        }
 
         try {
             ImmutableList<MaterialListEntry> currentRef = mimic_readMaterialListAll();
@@ -242,7 +263,16 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             int scroll = mimic_getScrollPosition();
 
-            mimic_writeMaterialListAll(ImmutableList.copyOf(targetList));
+            // ⛔ **写回内容必须包含原生行**（v1.16.15，同上）：之前只写视图行 ⇒ materialListAll
+            // 被覆盖、原生数据丢失、切回方块视图就只剩容器行。写回＝原生行 + 视图行 concat，
+            // 方块视图靠 injectSilently 的恢复分支显示纯原生。
+            java.util.List<MaterialListEntry> writeBack = new java.util.ArrayList<>(mimic_cachedVanillaList);
+            for (MaterialListEntry entry : targetList) {
+                if (entry != null && !writeBack.contains(entry)) {
+                    writeBack.add(entry);
+                }
+            }
+            mimic_writeMaterialListAll(ImmutableList.copyOf(writeBack));
 
             materialList.refreshPreFilteredList();
             materialList.updateCounts();
