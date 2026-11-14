@@ -443,7 +443,7 @@
   "litematica_container_filler.config.comment.batchFillItemList": "Item IDs used by Fill Containers (item-list mode), in priority order, e.g. minecraft:cobblestone.",
   "litematica_container_filler.message.batch_tool_out_of_material": "§e[Batch Tools] Out of materials: %s filled, %s containers left unfilled.",
   "litematica_container_filler.config.name.autoCollectEnabled": "Auto Collect Schematic Materials",
-  "litematica_container_filler.config.comment.autoCollectEnabled": "Hold the hotkey (0.5s) while looking at a container: missing materials from the material list (ALL view, including container materials) are pulled from your inventory / shulker boxes / Sophisticated Backpacks into the container. Server-side direct link; works in singleplayer or on servers with this mod.",
+  "litematica_container_filler.config.comment.autoCollectEnabled": "Hold the hotkey (0.5s) while aiming at a container: missing materials from the material list (ALL view, incl. container materials) are collected FROM the container INTO your inventory — loose stacks by the exact missing count, shulker boxes holding wanted items as whole boxes. Stops safely when your inventory is full. Server-side direct link.",
   "litematica_container_filler.hotkey.name.autoCollectTrigger": "Auto Collect Materials (hold)",
-  "litematica_container_filler.hotkey.comment.autoCollectTrigger": "Hold for 0.5s while aiming at a container to collect missing schematic materials (ALL view incl. container materials) into it. Release to stop."
+  "litematica_container_filler.hotkey.comment.autoCollectTrigger": "Hold 0.5s while aiming at a container to collect its missing schematic materials into your inventory."
 }

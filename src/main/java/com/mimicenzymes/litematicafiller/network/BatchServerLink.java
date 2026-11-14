@@ -70,6 +70,7 @@ public final class BatchServerLink {
     public static final int RESULT_FAILED = 5;
     /** 材料耗尽：这一格一点都没填上（客户端据此中止整批）。 */
     public static final int RESULT_NO_MATERIAL = 6;
+    public static final int RESULT_BACKPACK_FULL = 7;
 
     private static boolean registered;
 
@@ -232,7 +233,7 @@ public final class BatchServerLink {
                 case ACTION_CLEAR -> handleClear(posLong, player, inv);
                 case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv, payload.items());
                 case ACTION_SCHEMATIC_FILL -> handleSchematicFill(posLong, player, inv, payload.targets());
-                case ACTION_COLLECT_MISSING -> handleCollectMissing(posLong, player, inv, payload.items());
+                case ACTION_COLLECT_MISSING -> handleCollectToPlayer(posLong, player, inv, payload.items());
                 default -> sendResult(player, posLong, RESULT_FAILED, 0);
             }
         } catch (Throwable t) {
@@ -425,79 +426,106 @@ public final class BatchServerLink {
     }
 
     /**
-     * 【自动收集投影材料】（Ray 2026-11-14：「给 CF 加上 QC 的自动收集，认容器材料」）。
+     * 【自动收集投影材料】（Ray 2026-11-14 定稿方向：**从准星容器把清单缺料收进玩家背包**）。
      *
-     * <p>与 {@link #handleFillFull} 的差别：**按清单缺料数量塞**（清单说缺 1 个就塞 1 个，不是填满）。
-     * 数据源是客户端材料列表「全部」视图的缺失清单（含投影容器里的材料，{@code FillMaterialCalculator
-     * #getCurrentMissingForAutoCollect}）。取料链与填充完全共用：玩家背包 → 潜影盒/精妙背包补救（3 轮）。
-     * 服务端直连不经过光标 ⇒ 不需要 QC 那套「松开归还」逻辑。
+     * <h2>方向（v1.16.1 修正）</h2>
+     * <p>他的工作流＝材料列表（全部视图，含投影容器材料）显示缺什么 → 到**仓库大箱**（准星容器）
+     * 把缺料**收进身上** → 再用填充/批量工具装进投影容器。⇒ 数据流是 **容器 → 背包**，
+     * 与 QuickCraft 原版（背包→容器）相反；v1.16.0 做反了（把背包的东西塞进容器、
+     * 连已收集好的和潜影盒都被吐出去），v1.16.1 整个反向。</p>
+     *
+     * <h2>规则</h2>
+     * <ul>
+     *   <li><b>散装缺料</b>：容器里的物品是清单缺料 ⇒ 按**清单缺量**拿（缺 2 拿 2，不超拿），放回**容器**不丢；</li>
+     *   <li><b>盒装缺料</b>：容器里装着缺料的潜影盒/收纳袋 ⇒ **整盒收进背包**（交给快捷潜影盒开盒），
+     *       空/无关的盒子不动；</li>
+     *   <li>⛔ **只收不吐**：玩家背包/身上已收集好的东西一律不动（反向后天然成立）；</li>
+     *   <li><b>背包满保护</b>：放不下就立即停 + 回报 {@link #RESULT_BACKPACK_FULL}，
+     *       已收的保留、没收的留在容器（绝不 offerOrDrop 丢东西）。</li>
+     * </ul>
      */
-    private static void handleCollectMissing(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted) {
+    private static void handleCollectToPlayer(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted) {
         if (wanted == null || wanted.isEmpty()) {
             sendResult(player, posLong, RESULT_NO_ITEM, 0);
             return;
         }
-        int missing = 0;
-        int collectedTotal = 0;
-        for (int round = 0; round < 3; round++) {
-            missing = 0;
-            collectedTotal = 0;
-            Map<String, Integer> needed = new LinkedHashMap<>();
-            for (ItemStack want : wanted) {
-                if (want.isEmpty()) {
-                    continue;
-                }
-                int have = 0;
-                int capacity = 0;
-                for (int i = 0; i < inv.size(); i++) {
-                    ItemStack cur = inv.getStack(i);
-                    int max = Math.min(want.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
-                    if (cur.isEmpty()) {
-                        capacity += max;
-                    } else if (ItemMatcher.isSameItem(cur, want) && cur.getCount() < max) {
-                        have += cur.getCount();
-                        capacity += max - cur.getCount();
-                    }
-                }
-                int need = want.getCount() - have;
-                if (need <= 0) {
-                    continue;
-                }
-                int toTake = Math.min(need, capacity);
-                int taken = toTake > 0 ? takeFromPlayer(player, want, toTake) : 0;
-                int placed = 0;
-                int toPlace = taken;
-                for (int i = 0; i < inv.size() && toPlace > 0; i++) {
-                    ItemStack cur = inv.getStack(i);
-                    int max = Math.min(want.getMaxCount(), Math.max(1, inv.getMaxCountPerStack()));
-                    if (cur.isEmpty()) {
-                        int put = Math.min(toPlace, max);
-                        ItemStack putStack = want.copy();
-                        putStack.setCount(put);
-                        inv.setStack(i, putStack);
-                        toPlace -= put;
-                        placed += put;
-                    } else if (ItemMatcher.isSameItem(cur, want) && cur.getCount() < max) {
-                        int put = Math.min(toPlace, max - cur.getCount());
-                        cur.increment(put);
-                        toPlace -= put;
-                        placed += put;
-                    }
-                }
-                collectedTotal += placed;
-                int still = need - placed;
-                if (still > 0) {
-                    missing += still;
-                    needed.merge(RegistryKeyHelper.itemId(want), still, Integer::sum);
-                }
+        // 缺量索引（物品 → 还缺多少）：ItemMatcher 口径与填充一致
+        Map<Item, Integer> wantedCount = new LinkedHashMap<>();
+        for (ItemStack want : wanted) {
+            if (want.isEmpty()) {
+                continue;
             }
-            if (needed.isEmpty() || !rescueMissing(player, needed)) {
-                break;
+            wantedCount.merge(want.getItem(), want.getCount(), Integer::sum);
+        }
+        int collectedSlots = 0;
+        int collectedItems = 0;
+        boolean backpackFull = false;
+        for (int i = 0; i < inv.size() && !backpackFull; i++) {
+            ItemStack stack = inv.getStack(i);
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            // 盒装：潜影盒/收纳袋内容含任一缺料 ⇒ 整盒收
+            if (mimic(stack, wantedCount)) {
+                if (player.getInventory().insertStack(stack.copy())) {
+                    inv.setStack(i, ItemStack.EMPTY);
+                    inv.markDirty();
+                    collectedSlots++;
+                    collectedItems++;
+                } else {
+                    backpackFull = true;
+                }
+                continue;
+            }
+            // 散装：是清单缺料 ⇒ 按缺量拿
+            Integer stillNeeded = wantedCount.get(stack.getItem());
+            if (stillNeeded == null || stillNeeded <= 0) {
+                continue;
+            }
+            int take = Math.min(stillNeeded, stack.getCount());
+            ItemStack grab = stack.copy();
+            grab.setCount(take);
+            if (player.getInventory().insertStack(grab)) {
+                int rest = stack.getCount() - take;
+                if (rest <= 0) {
+                    inv.setStack(i, ItemStack.EMPTY);
+                } else {
+                    stack.setCount(rest);
+                }
+                wantedCount.merge(stack.getItem(), -take, Integer::sum);
+                inv.markDirty();
+                collectedSlots++;
+                collectedItems += take;
+            } else {
+                backpackFull = true;
             }
         }
         inv.markDirty();
         player.getInventory().markDirty();
-        sendResult(player, posLong, collectedTotal == 0 && missing > 0 ? RESULT_NO_MATERIAL : RESULT_DONE, missing);
+        if (backpackFull && collectedItems == 0) {
+            sendResult(player, posLong, RESULT_BACKPACK_FULL, 0);
+        } else if (backpackFull) {
+            sendResult(player, posLong, RESULT_BACKPACK_FULL, collectedItems);
+        } else if (collectedItems == 0) {
+            sendResult(player, posLong, RESULT_NO_MATERIAL, 0);
+        } else {
+            sendResult(player, posLong, RESULT_DONE, collectedItems);
+        }
+    }
+
+    /** 容器物品（潜影盒/收纳袋）的内容里有没有清单缺料。 */
+    private static boolean mimic(ItemStack stack, Map<Item, Integer> wantedCount) {
+        net.minecraft.component.type.ContainerComponent comp =
+                stack.get(net.minecraft.component.DataComponentTypes.CONTAINER);
+        if (comp == null) {
+            return false;
+        }
+        for (ItemStack inner : comp.iterateNonEmpty()) {
+            if (!inner.isEmpty() && wantedCount.containsKey(inner.getItem())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

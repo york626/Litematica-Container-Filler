@@ -19,13 +19,13 @@ import java.util.List;
  * ★ 1.16.0：**自动收集投影材料**（Ray 2026-11-14：「给 CF 加上 QC 的自动收集，认容器材料；
  * 功能集中到 CF」——参考 NeoForge 的 Backpack Side GUI 系同类功能 QuickCraft 的交互重写）。
  *
- * <h2>交互（复刻 QC 的手感，去掉它的缺陷）</h2>
+ * <h2>交互（v1.16.1 按 Ray 的实际工作流反向）</h2>
  * <ul>
- *   <li>**长按热键 ≥0.5 秒**激活（防误触，与 QC 的 longPress 同思路）；准星对准目标容器；</li>
- *   <li>激活即一次性收集：清单「全部」视图的缺失材料（**含投影容器里的材料**）从
- *       玩家背包 → 潜影盒/精妙背包（服务端补救链）塞进准星容器；</li>
- *   <li>**松开即结束**。⚠️ 与 QC 的差异：CF 走服务端直连、不经过光标，
- *       所以没有 QC 那套「松开归还」——东西不会停在手上。</li>
+ *   <li>**长按热键 ≥0.5 秒**激活（防误触）；准星对准**仓库容器**；</li>
+ *   <li>收集方向＝**容器 → 玩家背包**：材料列表「全部」视图的缺失材料（含投影容器材料）
+ *       从准星容器收进背包——散装按缺量拿、装着缺料的潜影盒整盒收（交给快捷潜影盒开盒）；</li>
+ *   <li>⛔ 只收不吐：身上已收集好的东西不动；</li>
+ *   <li>**背包满保护**：塞不下立即停 + 提示清理背包（已收保留、没收的留在容器，绝不丢）。</li>
  * </ul>
  *
  * <h2>数据源口径</h2>
@@ -113,8 +113,8 @@ public final class AutoCollectController {
         // ④ 发送（服务端：背包 → 潜影盒/精妙背包补救 → 塞准星容器）
         try {
             BatchServerLink.sendCollectMissing(pos, missing);
-            actionbar(client, "自动收集已发出：" + missing.size() + " 种缺失材料 → 准星容器");
-            LOGGER.info("[auto-collect] 已发送收集请求：目标 {}，{} 种缺料", pos.toShortString(), missing.size());
+            actionbar(client, "自动收集已发出：" + missing.size() + " 种缺失材料 ← 准星容器收进背包");
+            LOGGER.info("[auto-collect] 已发送收集请求：目标 {}，{} 种缺料（容器→背包）", pos.toShortString(), missing.size());
         } catch (Throwable t) {
             LOGGER.warn("[auto-collect] 发送失败", t);
             actionbar(client, "发送失败（详见日志）");
@@ -142,13 +142,15 @@ public final class AutoCollectController {
             return;
         }
         if (status == BatchServerLink.RESULT_DONE) {
+            actionbar(client, "收集完成：" + missing + " 个清单缺料已收进背包");
+        } else if (status == BatchServerLink.RESULT_BACKPACK_FULL) {
             actionbar(client, missing > 0
-                    ? "收集完成（还缺 " + missing + " 个：材料不足，已尽量补救）"
-                    : "收集完成：清单缺失材料已全部放进容器");
+                    ? "背包满了，已收 " + missing + " 个后停下——请清理背包再继续（没收的留在容器）"
+                    : "背包满了，请清理背包后再收集（容器里的料原样保留）");
         } else if (status == BatchServerLink.RESULT_NO_MATERIAL) {
-            actionbar(client, "背包/潜影盒/精妙背包里都没有清单缺料");
+            actionbar(client, "这个容器里没有清单缺料（或已收完）");
         } else {
-            actionbar(client, "收集失败（容器满或目标无效）");
+            actionbar(client, "收集失败（目标无效）");
         }
     }
 
