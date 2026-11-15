@@ -20,6 +20,8 @@ import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
@@ -505,8 +507,19 @@ public final class BatchServerLink {
             if (stack == null || stack.isEmpty()) {
                 continue;
             }
-            // 盒装：潜影盒/收纳袋内容含缺料 ⇒ **原地开盒取量**（盒子留在容器原位）
+            // 盒装：潜影盒/收纳袋内容含缺料
+            // 【v1.16.16 盒装语义，Ray 2026-11-15 定稿】：
+            // ① 需要量 ≥ 盒内缺料量（且盒里装的全是缺料）⇒ **整盒搬进背包**（省开盒），剩余缺量
+            //    继续从容器后面的槽位收；背包放不下 ⇒ 退回②；
+            // ② 需要量 < 盒内量 ⇒ **原地开盒按需取**（盒子留在容器原位，只拿需要的量）。
             if (mimic(stack, wantedCount)) {
+                int takenWhole = collectWholeBoxIfWorth(stack, wantedCount, player, inv, i);
+                if (takenWhole > 0) {
+                    inv.markDirty();
+                    collectedSlots++;
+                    collectedItems += takenWhole;
+                    continue;
+                }
                 int takenFromBox = mimic(stack, wantedCount, player);
                 if (takenFromBox > 0) {
                     inv.markDirty();
@@ -540,6 +553,9 @@ public final class BatchServerLink {
         }
         inv.markDirty();
         player.getInventory().markDirty();
+        // **客户端副本同步**（自 v1.17.1/2 移植：服务端直改背包后 sendContentUpdates 的变更检测
+        // 在 server.execute 路径不可靠 ⇒ 显式逐槽 SetSlot 包，收集后物品栏立刻刷新）
+        syncPlayerInventoryToClient(player);
         if (backpackFullFlag) {
             backpackFull = true;
         }
@@ -551,6 +567,70 @@ public final class BatchServerLink {
             sendResult(player, posLong, RESULT_NO_MATERIAL, 0);
         } else {
             sendResult(player, posLong, RESULT_DONE, collectedItems);
+        }
+    }
+
+    /**
+     * 【v1.16.16 盒装语义①】需要量 ≥ 盒内缺料量（且盒里装的全是缺料）⇒ **整盒搬进玩家背包**：
+     * 盒子原样（连同内容）进背包、容器槽位清空、每种缺料按盒内量记账（剩余缺量继续从后面的槽位收）。
+     *
+     * <p>不满足条件（盒里混着非缺料 / 某种缺料需要量小于盒内量 / 背包放不下 / 盒内数量异常）
+     * ⇒ 返回 0，调用方退回「原地开盒按需取」。</p>
+     *
+     * @return 整盒搬走时记入账的缺料总个数（>0 = 已整盒搬走）；0 = 不整搬
+     */
+    private static int collectWholeBoxIfWorth(ItemStack stack, Map<Item, Integer> wantedCount,
+                                              ServerPlayerEntity player, Inventory inv, int slot) {
+        net.minecraft.component.type.ContainerComponent comp =
+                stack.get(net.minecraft.component.DataComponentTypes.CONTAINER);
+        if (comp == null) {
+            return 0;
+        }
+        int total = 0;
+        for (ItemStack inner : comp.iterateNonEmpty()) {
+            if (inner == null || inner.isEmpty() || inner.getCount() <= 0) {
+                continue;   // ⚠️ 数量 ≤0 的异常栈不参与判定（存档脏数据防御）
+            }
+            Integer need = wantedCount.get(inner.getItem());
+            if (need == null || need < inner.getCount()) {
+                // 盒里混着非缺料，或某种料的需要量 < 盒内量 ⇒ 按需开盒更精确，不整搬
+                return 0;
+            }
+            total += inner.getCount();
+        }
+        if (total <= 0) {
+            return 0;
+        }
+        ItemStack boxMove = stack.copy();
+        if (!player.getInventory().insertStack(boxMove)) {
+            return 0;   // 背包放不下 ⇒ 退回开盒取量
+        }
+        for (ItemStack inner : comp.iterateNonEmpty()) {
+            if (inner == null || inner.isEmpty() || inner.getCount() <= 0) {
+                continue;
+            }
+            int took = Math.min(wantedCount.get(inner.getItem()), inner.getCount());
+            wantedCount.merge(inner.getItem(), -took, Integer::sum);
+        }
+        inv.setStack(slot, ItemStack.EMPTY);
+        LOGGER.info("[auto-collect] 需要量足够 ⇒ 整盒搬进背包（{}），剩余缺量继续从容器其他槽位收",
+                net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath());
+        return total;
+    }
+
+    /** 客户端背包副本同步：显式逐槽 SetSlot 包（sendContentUpdates 的变更检测在直改路径不可靠）。 */
+    private static void syncPlayerInventoryToClient(ServerPlayerEntity player) {
+        try {
+            ScreenHandler handler = player.playerScreenHandler;
+            for (int i = 0; i < handler.slots.size(); i++) {
+                player.networkHandler.sendPacket(new ScreenHandlerSlotUpdateS2CPacket(
+                        handler.syncId,
+                        handler.getRevision(),
+                        i,
+                        handler.slots.get(i).getStack()));
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[batch] 推送玩家背包同步包失败", t);
         }
     }
 

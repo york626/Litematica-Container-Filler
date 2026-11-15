@@ -191,13 +191,11 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             List<MaterialListEntry> targetList = mimic_buildTargetList();
 
-            // ⛔ 同 injectSilently：API 注入路径也要保原生行（v1.16.15 污染修复）
-            java.util.List<MaterialListEntry> writeBack = new java.util.ArrayList<>(mimic_cachedVanillaList);
-            for (MaterialListEntry entry : targetList) {
-                if (entry != null && !writeBack.contains(entry)) {
-                    writeBack.add(entry);
-                }
-            }
+            // ⛔ v1.16.16（Ray 实测「容器视图把方块视图的箱子/台阶/楼梯都显示出来了」）：
+            //    只写**视图行**——界面渲染读的正是 materialListAll，写 concat（原生+视图）等于把
+            //    原生行也显示进容器视图。原生数据由 mimic_originalVanillaLists 缓存兜底，
+            //    切回方块视图时恢复（injectSilently 的 listMode==0 分支）。
+            List<MaterialListEntry> writeBack = targetList;
 
             mimic_isInjecting = true;
             try {
@@ -263,16 +261,13 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             int scroll = mimic_getScrollPosition();
 
-            // ⛔ **写回内容必须包含原生行**（v1.16.15，同上）：之前只写视图行 ⇒ materialListAll
-            // 被覆盖、原生数据丢失、切回方块视图就只剩容器行。写回＝原生行 + 视图行 concat，
-            // 方块视图靠 injectSilently 的恢复分支显示纯原生。
-            java.util.List<MaterialListEntry> writeBack = new java.util.ArrayList<>(mimic_cachedVanillaList);
-            for (MaterialListEntry entry : targetList) {
-                if (entry != null && !writeBack.contains(entry)) {
-                    writeBack.add(entry);
-                }
-            }
-            mimic_writeMaterialListAll(ImmutableList.copyOf(writeBack));
+            // ⛔ **只写视图行**（v1.16.16，Ray 实测「容器视图混进方块视图的箱子/台阶/楼梯」）：
+            // 界面渲染读的就是 materialListAll ⇒ 写什么显示什么。v1.16.15 写 concat（原生+视图）
+            // 保住了数据却把原生行也显示进了容器视图。原生数据改由 mimic_originalVanillaLists
+            // 缓存兜底：方块视图（listMode==0）走上面的恢复分支写回缓存的原生行。
+            // ⚠️ 自污染免疫：下面 lastInjectedRef 记住我们写的引用，line ~247 的
+            //    「currentRef != lastInjectedRef ⇒ 收进缓存」只会收 Litematica 自己重算的原生行。
+            mimic_writeMaterialListAll(ImmutableList.copyOf(targetList));
 
             materialList.refreshPreFilteredList();
             materialList.updateCounts();

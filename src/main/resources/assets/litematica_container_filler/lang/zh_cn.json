@@ -449,5 +449,7 @@
   "litematica_container_filler.hotkey.name.autoCollectTrigger": "自动收集材料（按住）",
   "litematica_container_filler.hotkey.comment.autoCollectTrigger": "对准容器按住 0.5 秒，把清单缺料从容器收进玩家背包（散装按缺量、盒装整盒）。背包满自动停。",
   "litematica_container_filler.config.name.autoCollectSecondaryThreshold": "二级展开阈值",
-  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "缺失量不超过此值的行才展开合成原料（例如漏斗缺 1198 个需要 6000 铁锭，就不会展开它的原料）。小缺料（如海晶灯缺 1）照常展开。默认 64。"
+  "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "缺失量不超过此值的行才展开合成原料（例如漏斗缺 1198 个需要 6000 铁锭，就不会展开它的原料）。小缺料（如海晶灯缺 1）照常展开。默认 64。",
+  "litematica_container_filler.config.name.autoCollectSecondaryEnabled": "带上二级材料",
+  "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "开（默认）：收集清单缺料时把它们的合成原料也一并收齐（受「二级展开阈值」限制）——备货一次到位。关：纯严格模式，显示多少收多少，不带原料（适合清点/转运）。"
 }

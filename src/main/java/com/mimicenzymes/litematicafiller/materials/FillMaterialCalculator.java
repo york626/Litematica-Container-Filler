@@ -297,6 +297,11 @@ public class FillMaterialCalculator {
      * （玩家背包 36 格）——身上够的部分不重复收。只展开一层（原料不再递归）。
      */
     private static void expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client) {
+        // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式，
+        // 显示多少收多少、不带原料——清点/转运场景）
+        if (!com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()) {
+            return;
+        }
         if (wanted.isEmpty() || client.player == null || client.player.networkHandler == null) {
             return;
         }

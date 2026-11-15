@@ -117,6 +117,8 @@ public class Configs implements IConfigHandler {
     //【自动收集·二级展开阈值】行的缺失量 ≤ 此值才展开合成原料（Ray 2026-11-14：漏斗缺 1198 的
     // 铁锭原料 6000 个把背包塞爆——小缺料（海晶灯缺 1）才值得合成备料，巨量缺料有专门获取途径）
     public static final ConfigInteger AUTO_COLLECT_SECONDARY_THRESHOLD = new ConfigInteger("litematica_container_filler.config.name.autoCollectSecondaryThreshold", 64, 0, 9999, "litematica_container_filler.config.comment.autoCollectSecondaryThreshold");
+    //【自动收集·带上二级材料】总开关（Ray 2026-11-15 定稿：默认带上；关＝纯严格模式，显示多少收多少）
+    public static final ConfigBoolean AUTO_COLLECT_SECONDARY_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.autoCollectSecondaryEnabled", true, "litematica_container_filler.config.comment.autoCollectSecondaryEnabled");
     /** 「填充容器」的取物模式：物品列表 / 手持物品（对齐打印机「填充」页）。 */
     public static final ConfigOptionList BATCH_FILL_ITEM_MODE        = new ConfigOptionList("litematica_container_filler.config.name.batchFillItemMode", BatchFillItemMode.BLOCKLIST, "litematica_container_filler.config.comment.batchFillItemMode");
     /** 「填充容器」物品列表模式用的物品 ID 列表（按顺序优先）。 */
@@ -244,6 +246,7 @@ public class Configs implements IConfigHandler {
                 BATCH_FILL_ITEM_MODE,
                 BATCH_FILL_ITEM_LIST,
                 AUTO_COLLECT_ENABLED,
+                AUTO_COLLECT_SECONDARY_ENABLED,
                 AUTO_COLLECT_SECONDARY_THRESHOLD
         );
 
