@@ -1068,7 +1068,26 @@ public class FillMaterialCalculator {
             fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(list, client.player);
         }
 
-        return list;
+        // ⛔ v1.16.18-Ray（Ray 2026-11-15）：**缺失量必须减掉"身上已有"**。
+        //   容器视图的缺失量是「盒内容 × 盒需求数量」（`addMaterialListContainerItem` 里算的），
+        //   而 Litematica 的 `MaterialListEntry.countMissing` 是 **final**，
+        //   `updateAvailableCounts` 只写 `countAvailable`、**不会重算 missing** ⇒
+        //   行里一直挂着"整盒内容"当缺失：清单显示缺 1153（工具 HUD 按 总量−已有 算），
+        //   自动收集却按 1729 收（日志实测：`smooth_quartz×1729`）。
+        //   ⇒ 这里用「总量 − 身上已有」重建一遍缺失量（与 HUD、与玩家直觉同口径）。
+        List<MaterialListEntry> normalized = new ArrayList<>(list.size());
+        for (MaterialListEntry entry : list) {
+            int total = Math.max(0, entry.getCountTotal());
+            int available = Math.max(0, entry.getCountAvailable());
+            int missing = Math.max(0, total - available);
+            if (missing == entry.getCountMissing()) {
+                normalized.add(entry);
+            } else {
+                normalized.add(new MaterialListEntry(entry.getStack(), total, missing,
+                        Math.max(0, entry.getCountMismatched()), available));
+            }
+        }
+        return normalized;
     }
 
     public static List<MaterialListEntry> mergeLists(List<MaterialListEntry> vanillaList, List<MaterialListEntry> containerList) {

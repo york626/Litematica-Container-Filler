@@ -612,35 +612,40 @@ public final class BatchServerLink {
         if (comp == null) {
             return 0;
         }
+        // 【v1.16.18-Ray 修】按**物品**汇总盒内数量再比较。
+        // ⛔ 旧写法拿「单个栈的数量」比（`need < inner.getCount()`）：盒里 27 栈×64 = 1728 时，
+        //   需要 1153 也满足「1153 ≥ 64」⇒ 整盒被搬走（Ray 2026-11-15 实测：清单缺 18组+1，
+        //   却收来 1 整盒 + 1 个）。正确语义＝「需要量 ≥ **盒内该材料总量**」。
+        Map<Item, Integer> boxCounts = new LinkedHashMap<>();
         int total = 0;
         for (ItemStack inner : comp.iterateNonEmpty()) {
             if (inner == null || inner.isEmpty() || inner.getCount() <= 0) {
                 continue;   // ⚠️ 数量 ≤0 的异常栈不参与判定（存档脏数据防御）
             }
-            Integer need = wantedCount.get(inner.getItem());
-            if (need == null || need < inner.getCount()) {
-                // 盒里混着非缺料，或某种料的需要量 < 盒内量 ⇒ 按需开盒更精确，不整搬
-                return 0;
+            if (!wantedCount.containsKey(inner.getItem())) {
+                return 0;   // 盒里混着非缺料 ⇒ 按需开盒更精确，不整搬
             }
+            boxCounts.merge(inner.getItem(), inner.getCount(), Integer::sum);
             total += inner.getCount();
         }
         if (total <= 0) {
             return 0;
         }
+        for (Map.Entry<Item, Integer> e : boxCounts.entrySet()) {
+            if (wantedCount.getOrDefault(e.getKey(), 0) < e.getValue()) {
+                return 0;   // 需要量 < 盒内该材料总量 ⇒ 开盒按需取（盒子留容器原位）
+            }
+        }
         ItemStack boxMove = stack.copy();
         if (!player.getInventory().insertStack(boxMove)) {
             return 0;   // 背包放不下 ⇒ 退回开盒取量
         }
-        for (ItemStack inner : comp.iterateNonEmpty()) {
-            if (inner == null || inner.isEmpty() || inner.getCount() <= 0) {
-                continue;
-            }
-            int took = Math.min(wantedCount.get(inner.getItem()), inner.getCount());
-            wantedCount.merge(inner.getItem(), -took, Integer::sum);
+        for (Map.Entry<Item, Integer> e : boxCounts.entrySet()) {
+            wantedCount.merge(e.getKey(), -e.getValue(), Integer::sum);
         }
         inv.setStack(slot, ItemStack.EMPTY);
-        LOGGER.info("[auto-collect] 需要量足够 ⇒ 整盒搬进背包（{}），剩余缺量继续从容器其他槽位收",
-                net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath());
+        LOGGER.info("[auto-collect] 需要量足够 ⇒ 整盒搬进背包（{}，盒内 {} 个），剩余缺量继续从容器其他槽位收",
+                net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath(), total);
         return total;
     }
 
