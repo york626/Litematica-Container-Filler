@@ -274,12 +274,17 @@ public class FillMaterialCalculator {
 
     /** 行 → 缺失清单（missing>0 的行，count=缺失量）。 */
     private static List<ItemStack> missingStacksFromRows(List<MaterialListEntry> rows) {
+        MinecraftClient client = MinecraftClient.getInstance();
         List<ItemStack> out = new ArrayList<>();
         for (MaterialListEntry entry : rows) {
             if (entry == null || entry.getStack().isEmpty()) {
                 continue;
             }
-            int missing = Math.max(0, entry.getCountMissing());
+            // ★ v1.16.21-Ray：缺失量按**按热键这一刻**的背包实时算（总量 − 身上现有），
+            //   不信清单缓存。好处：① 收完再按一次自然变 0（不需要服务端再扣一次）；
+            //   ② 一级/二级口径统一（都是"总量 − 现有"），不会再出现「清单说缺 1153、实际按 1729 收」。
+            int total = Math.max(0, entry.getCountTotal());
+            int missing = total - countHeldNow(client, entry.getStack().getItem());
             if (missing <= 0) {
                 continue;
             }
@@ -288,6 +293,64 @@ public class FillMaterialCalculator {
             out.add(want);
         }
         return out;
+    }
+
+    /**
+     * 现在身上（36 格 + 盒内一层）有多少个该物品。
+     *
+     * <p>按「按热键那一刻」实时统计，和 Litematica 的 {@code countAvailable} 口径一致
+     * （不含精妙背包 —— 那一层由服务端补扣，见 {@code BatchServerLink.alreadyHeld}）。
+     */
+    private static int countHeldNow(MinecraftClient client, net.minecraft.item.Item item) {
+        if (client == null || client.player == null) {
+            return 0;
+        }
+        int sum = 0;
+        var inventory = client.player.getInventory();
+        for (int i = 0; i < inventory.size(); i++) {
+            ItemStack slotStack = inventory.getStack(i);
+            if (slotStack.isEmpty()) {
+                continue;
+            }
+            if (slotStack.getItem() == item) {
+                sum += slotStack.getCount();
+            }
+            net.minecraft.component.type.ContainerComponent comp =
+                    slotStack.get(net.minecraft.component.DataComponentTypes.CONTAINER);
+            if (comp != null) {
+                for (ItemStack inner : comp.iterateNonEmpty()) {
+                    if (inner != null && !inner.isEmpty() && inner.getItem() == item) {
+                        sum += inner.getCount();
+                    }
+                }
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * 该物品在**整份清单**里的总需求（含"直接放置"那一部分）。
+     *
+     * <p>用途：判断"身上有多少能拿去合成"。例：平滑石英块总需求 1729 + 台阶/楼梯还要 9 个，
+     * 身上 1729 个时富余 = 1729 − 1729 = 0 ⇒ 那 9 个仍然要收（Ray 2026-11-15 的判据）。
+     */
+    private static int ownTotalDemand(net.minecraft.item.Item item) {
+        try {
+            fi.dy.masa.litematica.materials.MaterialListBase list = DataManager.getMaterialList();
+            if (list == null) {
+                return 0;
+            }
+            int sum = 0;
+            for (MaterialListEntry entry : list.getMaterialsAll()) {
+                if (entry == null || entry.getStack().isEmpty() || entry.getStack().getItem() != item) {
+                    continue;
+                }
+                sum += Math.max(0, entry.getCountTotal());
+            }
+            return sum;
+        } catch (Throwable t) {
+            return 0;
+        }
     }
 
     /**
@@ -359,17 +422,14 @@ public class FillMaterialCalculator {
                     // ⚠️ 与一级行**叠加**是 Ray 2026-11-14 定稿（v1.16.8 撤销 v1.16.7 的去重）：
                     // 「海晶灯之类需要二级材料正好一起拿过来，减少工作量少拿一次」——
                     // 一级行缺 4 + 别的行配方还需 5 = 拿 9，海晶灯和砂粒一次备齐。
-                    // 身上已有的部分由服务端「收集够即止」统一扣（v1.16.6），不会重复堆。
-                    // 减去身上已有（玩家背包 36 格）
-                    int have = 0;
-                    var inventory = client.player.getInventory();
-                    for (int i = 0; i < inventory.size(); i++) {
-                        ItemStack inSlot = inventory.getStack(i);
-                        if (!inSlot.isEmpty() && inSlot.getItem() == options[0].getItem()) {
-                            have += inSlot.getCount();
-                        }
-                    }
-                    need = Math.max(0, need - have);
+                    // ⛔ v1.16.21-Ray（Ray 2026-11-15：「还差 9 个二级材料，自动收集不收集」）：
+                    //   旧写法直接拿「身上这个物品的总数」去减 ⇒ 身上 1729 个平滑石英块
+                    //   （**全被直接放置占用**）把 3/6 的合成需求减成 0 ⇒ 收集清单里没有那 9 个。
+                    //   正确：只有**富余**出来的量能算作已有 = 身上 − 该物品自己的总需求（1729）。
+                    int have = countHeldNow(client, options[0].getItem());
+                    int reserved = ownTotalDemand(options[0].getItem());
+                    int spare = Math.max(0, have - reserved);
+                    need = Math.max(0, need - spare);
                     if (need > 0) {
                         additions.add(new ItemStack(options[0].getItem(), need));
                     }
