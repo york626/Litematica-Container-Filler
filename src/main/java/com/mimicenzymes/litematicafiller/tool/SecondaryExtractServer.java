@@ -479,22 +479,25 @@ public final class SecondaryExtractServer {
 
     /** 按预算把 {@code stack} 塞进容器（塞多少扣多少预算），返回实际搬过去的数量。 */
     private static int takeInto(Inventory target, ItemStack stack, Map<Item, Long> remaining) {
-        long budget = remaining.getOrDefault(stack.getItem(), 0L);
+        // ⛔ v1.16.25-Ray（Ray 2026-11-15 实测「箱子里明明有 9 个，却报 平滑石英块 0/9」）：
+        //   **物品 id 必须在 insertInto 之前取**！insertInto 会把源栈 setCount(0)，而 1.21 的
+        //   `ItemStack.getItem()` 对空栈返回 **AIR** ⇒ 旧写法把这笔账写进 "air" 这个键、
+        //   原物品的预算**一点没减**（日志里那行「air 预算 9 实搬 9 剩余预算 0」就是它）。
+        //   后果：① 报告永远 0/N；② 下一次按热键以为还没搬，会重复搬。
+        Item item = stack.getItem();
+        long budget = remaining.getOrDefault(item, 0L);
         if (budget <= 0L) {
             return 0;
         }
-        // 2026-11-15 实测出现过一行「提取预算执行：air 预算 9 实搬 9」——空/异常栈被当成材料记账。
-        // 空栈一律不参与（既不搬也不扣预算），避免"日志说搬了、容器里啥也没有"。
-        if (stack.isEmpty() || stack.getItem() == net.minecraft.item.Items.AIR) {
-            return 0;
+        if (stack.isEmpty() || item == net.minecraft.item.Items.AIR) {
+            return 0;   // 空/异常栈不参与（既不搬也不扣预算）
         }
         int movedNow = insertInto(target, stack, budget);
-        remaining.put(stack.getItem(), budget - movedNow);
-        // 逐次诊断（v1.34.3）：预算行只打汇总，2026-11-15 三轮实测「预算 9 却搬 81/90」钉不住是哪一环
-        // ⇒ 每次实际搬运都记一行（预算/实搬/剩余），下一轮测试直接定位
+        remaining.put(item, budget - movedNow);
+        // 逐次诊断：每搬一次记一行（预算/实搬/剩余）
         LOGGER.info("[extract] 提取预算执行：{} 预算 {} 实搬 {} 剩余预算 {}",
-                Registries.ITEM.getId(stack.getItem()).getPath(), budget, movedNow,
-                remaining.getOrDefault(stack.getItem(), 0L));
+                Registries.ITEM.getId(item).getPath(), budget, movedNow,
+                remaining.getOrDefault(item, 0L));
         return movedNow;
     }
 
