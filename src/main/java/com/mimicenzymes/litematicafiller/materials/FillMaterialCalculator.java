@@ -1080,10 +1080,24 @@ public class FillMaterialCalculator {
     public static List<MaterialListEntry> mergeLists(List<MaterialListEntry> vanillaList, List<MaterialListEntry> containerList) {
         // ⛔ v1.16.14（Ray 2026-11-14：「各自管理各自的材料列表不要串一块」）：
         // 之前的实现把同物品的数量**相加**（例：原生缺 8 + 容器缺 4 = 显示 12）⇒ 数量串了。
-        // 现在**不合并**：原生行 + 容器行各显示各的（同物品两行分开，各自数量）。
+        // 现在**不合并数量**：同物品各自一行、各显示各的。
+        // ⛔ v1.16.20-Ray（Ray 2026-11-15：「打开一下全部视图，平滑石英块就多一行」）：
+        // 但也不能**重复行**——同一物品（同一个 ItemStackKey：物品 + 自定义名 + 盒内容 + 组件）
+        // 在「原生行 + 容器行」里只保留**第一行**（原生优先），否则切几次视图就叠出 2、3、4 行，
+        // 底部「总计」也跟着涨（实测 4×1729＝6916）。
         List<MaterialListEntry> out = new ArrayList<>();
-        out.addAll(vanillaList);
-        out.addAll(containerList);
+        java.util.Set<ItemStackKey> seen = new java.util.HashSet<>();
+
+        for (MaterialListEntry entry : vanillaList) {
+            if (entry != null && seen.add(new ItemStackKey(entry.getStack()))) {
+                out.add(entry);
+            }
+        }
+        for (MaterialListEntry entry : containerList) {
+            if (entry != null && seen.add(new ItemStackKey(entry.getStack()))) {
+                out.add(entry);
+            }
+        }
         return out;
     }
 }

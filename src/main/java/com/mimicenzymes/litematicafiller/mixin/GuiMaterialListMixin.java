@@ -40,6 +40,8 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
     @Unique private boolean mimic_needsCalculation = true;
     @Unique private List<MaterialListEntry> mimic_cachedVanillaList = null;
     @Unique private ImmutableList<MaterialListEntry> mimic_lastInjectedRef = null;
+    /** 上一次**我们自己写进** materialListAll 的那些行（按对象身份记），用于剔除自污染。 */
+    @Unique private List<MaterialListEntry> mimic_lastInjectedRows = new java.util.ArrayList<>();
     @Unique private boolean mimic_isInjecting = false;
     @Unique private boolean mimic_forceReplacementRefresh = false;
     @Unique private int mimic_seenReplacementVersion = -1;
@@ -206,6 +208,7 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             ImmutableList<MaterialListEntry> newRef = mimic_readMaterialListAll();
             mimic_lastInjectedRef = newRef;
+            mimic_lastInjectedRows = new ArrayList<>(writeBack);
 
         } catch (Exception ignored) {}
     }
@@ -245,9 +248,26 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
                 mimic_cachedVanillaList = mimic_getOriginalVanillaList(currentRef);
                 mimic_needsCalculation = true;
             } else if (!mimic_forceReplacementRefresh && currentRef != mimic_lastInjectedRef) {
-                mimic_cachedVanillaList = new ArrayList<>(currentRef);
-                mimic_originalVanillaLists.put(materialList, mimic_cachedVanillaList);
-                mimic_needsCalculation = true;
+                // ⛔ v1.16.20-Ray（Ray 2026-11-15：「打开一下全部视图，平滑石英块就多一行」）：
+                //   旧写法把 currentRef **整份**当成"原生行"收下。但 currentRef 里混着**我们自己上次写进去的
+                //   容器行**（引用判据只有在没人换过 materialListAll 时才成立；切视图/onTaskCompleted 重建后
+                //   引用就变了）⇒ 每次刷新都把上次的合并结果再叠一遍 ⇒ 行数 1、2、3、4… 一路长。
+                //   修：按**对象身份**剔除我们写进去的行，只收 Litematica 自己造的行；剔完为空就保持旧缓存。
+                java.util.IdentityHashMap<MaterialListEntry, Boolean> ours = new java.util.IdentityHashMap<>();
+                for (MaterialListEntry injected : mimic_lastInjectedRows) {
+                    ours.put(injected, Boolean.TRUE);
+                }
+                List<MaterialListEntry> captured = new ArrayList<>();
+                for (MaterialListEntry candidate : currentRef) {
+                    if (!ours.containsKey(candidate)) {
+                        captured.add(candidate);
+                    }
+                }
+                if (!captured.isEmpty()) {
+                    mimic_cachedVanillaList = captured;
+                    mimic_originalVanillaLists.put(materialList, captured);
+                    mimic_needsCalculation = true;
+                }
             }
 
             if (mimic_needsCalculation) {
@@ -273,6 +293,7 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             materialList.updateCounts();
 
             mimic_lastInjectedRef = mimic_readMaterialListAll();
+            mimic_lastInjectedRows = new ArrayList<>(targetList);
             mimic_forceReplacementRefresh = false;
 
             mimic_refreshWidget();
