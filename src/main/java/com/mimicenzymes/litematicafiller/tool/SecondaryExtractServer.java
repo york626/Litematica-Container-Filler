@@ -193,6 +193,24 @@ public final class SecondaryExtractServer {
                 }
                 LOGGER.info("[extract] 服务端提取：没搬到东西，背包物品 = {}", sb);
             }
+            // ★ v1.16.24-Ray：把**实际结果**用 actionbar 报给玩家（直调服务端是同一个 JVM，
+            //   服务端可以直接发消息）——否则玩家只看到"按需进准星容器"那句，不知道到底搬了几个、
+            //   哪个材料没找到（Ray 2026-11-15 就因此以为"箱子没收到二级材料"）。
+            try {
+                StringBuilder summary = new StringBuilder();
+                for (java.util.Map.Entry<Item, Long> e : demand.entrySet()) {
+                    long left = Math.max(0L, remaining.getOrDefault(e.getKey(), 0L));
+                    long got = Math.max(0L, e.getValue() - left);
+                    if (summary.length() > 0) {
+                        summary.append("，");
+                    }
+                    summary.append(e.getKey().getName().getString()).append(' ')
+                            .append(got).append('/').append(e.getValue());
+                }
+                String extra = movedBoxes > 0 ? "（另有 " + movedBoxes + " 个盒子进背包）" : "";
+                player.sendMessage(net.minecraft.text.Text.literal("提取二级材料：" + summary + extra), true);
+            } catch (Throwable ignored) {
+            }
         } catch (Throwable t) {
             LOGGER.warn("[extract] 服务端提取失败", t);
         }
@@ -463,6 +481,11 @@ public final class SecondaryExtractServer {
     private static int takeInto(Inventory target, ItemStack stack, Map<Item, Long> remaining) {
         long budget = remaining.getOrDefault(stack.getItem(), 0L);
         if (budget <= 0L) {
+            return 0;
+        }
+        // 2026-11-15 实测出现过一行「提取预算执行：air 预算 9 实搬 9」——空/异常栈被当成材料记账。
+        // 空栈一律不参与（既不搬也不扣预算），避免"日志说搬了、容器里啥也没有"。
+        if (stack.isEmpty() || stack.getItem() == net.minecraft.item.Items.AIR) {
             return 0;
         }
         int movedNow = insertInto(target, stack, budget);

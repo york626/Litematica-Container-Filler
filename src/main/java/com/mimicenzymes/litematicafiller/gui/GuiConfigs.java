@@ -100,7 +100,10 @@ public class GuiConfigs extends GuiConfigsBase {
                 Configs.BATCH_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
                 // Ray 2026-11-15：把「批量工具触发 / 取消」挪到页面**最底部**——
                 // 自动收集那两个热键跟上面的"带二级/阈值"是一组，批量工具的两个键放最后更好找。
+                // Ray 2026-11-15：自动收集（按住）往上挪到「二级展开阈值」之后，
+                // 让「自动收集」和「提取二级材料」两组各自连在一起，好区分。
                 list.add(new ConfigOptionWrapper(Hotkeys.AUTO_COLLECT_TRIGGER));
+                list.add(new ConfigOptionWrapper(Configs.EXTRACT_SECONDARY_ENABLED));
                 list.add(new ConfigOptionWrapper(Hotkeys.EXTRACT_SECONDARY_MATERIALS));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_TRIGGER));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_CANCEL));

@@ -249,8 +249,7 @@ public class Configs implements IConfigHandler {
                 BATCH_FILL_ITEM_LIST,
                 AUTO_COLLECT_ENABLED,
                 AUTO_COLLECT_SECONDARY_ENABLED,
-                AUTO_COLLECT_SECONDARY_THRESHOLD,
-                EXTRACT_SECONDARY_ENABLED
+                AUTO_COLLECT_SECONDARY_THRESHOLD
         );
 
         RENDER_OPTIONS = ImmutableList.of(
