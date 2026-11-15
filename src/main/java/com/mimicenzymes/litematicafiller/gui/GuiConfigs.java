@@ -98,9 +98,11 @@ public class GuiConfigs extends GuiConfigsBase {
             case BATCH -> {
                 // 「批量工具」独立页（Ray 2026-11-06）：开关 / 动作 / 范围 + 两个热键都放这一页。
                 Configs.BATCH_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
+                // Ray 2026-11-15：把「批量工具触发 / 取消」挪到页面**最底部**——
+                // 自动收集那两个热键跟上面的"带二级/阈值"是一组，批量工具的两个键放最后更好找。
+                list.add(new ConfigOptionWrapper(Hotkeys.AUTO_COLLECT_TRIGGER));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_TRIGGER));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_CANCEL));
-                list.add(new ConfigOptionWrapper(Hotkeys.AUTO_COLLECT_TRIGGER));
             }
             case RENDER -> Configs.RENDER_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
             case HOTKEYS -> Hotkeys.HOTKEY_LIST.forEach(h -> list.add(new ConfigOptionWrapper(h)));
