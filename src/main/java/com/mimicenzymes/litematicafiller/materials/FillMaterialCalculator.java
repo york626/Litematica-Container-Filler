@@ -1068,26 +1068,13 @@ public class FillMaterialCalculator {
             fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(list, client.player);
         }
 
-        // ⛔ v1.16.18-Ray（Ray 2026-11-15）：**缺失量必须减掉"身上已有"**。
-        //   容器视图的缺失量是「盒内容 × 盒需求数量」（`addMaterialListContainerItem` 里算的），
-        //   而 Litematica 的 `MaterialListEntry.countMissing` 是 **final**，
-        //   `updateAvailableCounts` 只写 `countAvailable`、**不会重算 missing** ⇒
-        //   行里一直挂着"整盒内容"当缺失：清单显示缺 1153（工具 HUD 按 总量−已有 算），
-        //   自动收集却按 1729 收（日志实测：`smooth_quartz×1729`）。
-        //   ⇒ 这里用「总量 − 身上已有」重建一遍缺失量（与 HUD、与玩家直觉同口径）。
-        List<MaterialListEntry> normalized = new ArrayList<>(list.size());
-        for (MaterialListEntry entry : list) {
-            int total = Math.max(0, entry.getCountTotal());
-            int available = Math.max(0, entry.getCountAvailable());
-            int missing = Math.max(0, total - available);
-            if (missing == entry.getCountMissing()) {
-                normalized.add(entry);
-            } else {
-                normalized.add(new MaterialListEntry(entry.getStack(), total, missing,
-                        Math.max(0, entry.getCountMismatched()), available));
-            }
-        }
-        return normalized;
+        // ⛔ v1.16.19-Ray（2026-11-15）**撤回** v1.16.18 在这里的「缺失量 = 总量 − 已有」重算：
+        //   服务端 `handleCollectToPlayer` 已经按「身上已有」扣过一次（v1.16.6 起的防重复收集），
+        //   客户端再扣一次 ⇒ **双扣**：缺 1153、身上已有 576 时只收 577。
+        //   存档实测（2026-11-15）：玩家背包确实有 576 个平滑石英块，服务端扣减是对的；
+        //   真正的 bug 在盒装判定（见 `BatchServerLink.collectWholeBoxIfWorth`，已按物品汇总修）。
+        //   ⇒ 这里保持原样：清单/请求发「总量」，由服务端统一扣「身上已有」。
+        return list;
     }
 
     public static List<MaterialListEntry> mergeLists(List<MaterialListEntry> vanillaList, List<MaterialListEntry> containerList) {
