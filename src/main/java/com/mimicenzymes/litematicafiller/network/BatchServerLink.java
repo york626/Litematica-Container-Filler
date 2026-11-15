@@ -485,19 +485,45 @@ public final class BatchServerLink {
             }
             wantedCount.merge(want.getItem(), want.getCount(), Integer::sum);
         }
-        // **收集够清单量即止**：身上（玩家背包）已收集的同物品先扣——
+        // **收集够清单量即止**：身上已收集的同物品先扣——
         // 不然每按一次热键就从仓库再收一份（v1.16.5 实测：熔浆膏/海晶碎片重复收）
+        // 【v1.16.17 扩口径，Ray 2026-11-15 定稿「玩家身上已经有的，盒装里面有，还是精妙背包里面
+        // 有，没有缺失的不用收集」】：已有 = 原版背包 + 背包里盒装（递归一层）+ **精妙背包**——
+        // v1.16.16 只数原版背包，Ray 身上 9 组石英在精妙背包里 ⇒ 二级展开以为还缺 9 个又收了 9 个。
         var inventory = player.getInventory();
         Map<Item, Integer> alreadyHeld = new LinkedHashMap<>();
         for (int i = 0; i < inventory.size(); i++) {
             ItemStack s = inventory.getStack(i);
-            if (!s.isEmpty()) {
-                alreadyHeld.merge(s.getItem(), s.getCount(), Integer::sum);
+            if (s.isEmpty()) {
+                continue;
+            }
+            alreadyHeld.merge(s.getItem(), s.getCount(), Integer::sum);
+            // 盒装：潜影盒/收纳袋里面的也算已有（只算一层，与收集的取料口径一致）
+            ContainerComponent comp = s.get(DataComponentTypes.CONTAINER);
+            if (comp != null) {
+                for (ItemStack inner : comp.iterateNonEmpty()) {
+                    if (!inner.isEmpty()) {
+                        alreadyHeld.merge(inner.getItem(), inner.getCount(), Integer::sum);
+                    }
+                }
+            }
+        }
+        // 精妙背包（身上 carried + 穿戴 worn，sbp 自己的 Provider 覆盖）里的也算已有
+        if (SbpSupport.available()) {
+            try {
+                for (Item item : new HashSet<>(wantedCount.keySet())) {
+                    int inSbp = SbpServerExtract.countInBackpacks(player, item);
+                    if (inSbp > 0) {
+                        alreadyHeld.merge(item, inSbp, Integer::sum);
+                    }
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("[auto-collect] 数精妙背包存量失败（跳过）", t);
             }
         }
         wantedCount.replaceAll((item, need) -> Math.max(0, need - alreadyHeld.getOrDefault(item, 0)));
         wantedCount.values().removeIf(need -> need <= 0);
-        LOGGER.info("[auto-collect] 扣除身上已有后的净缺料：{} 种", wantedCount.size());
+        LOGGER.info("[auto-collect] 扣除身上/盒装/精妙背包已有后的净缺料：{} 种", wantedCount.size());
         int collectedSlots = 0;
         int collectedItems = 0;
         boolean backpackFull = false;

@@ -54,6 +54,40 @@ public final class SbpServerExtract {
 
     // ===================== 取货（背包 → 玩家背包） =====================
 
+    /**
+     * 【v1.16.17 只读计数】数玩家**所有精妙背包**（身上 carried + 穿戴 worn，sbp 自己的
+     * Provider 覆盖）里某种物品的存量——收集功能的「已有扣减」用（Ray 2026-11-15：
+     * 身上 9 组石英在精妙背包里，旧口径只数原版背包 ⇒ 二级展开以为还缺又收了 9 个）。
+     *
+     * <p>纯读（{@code getSlotStack} 模拟口径），不改背包数据；sbp 不可用/反射失配 ⇒ 返回 0。</p>
+     */
+    public static int countInBackpacks(ServerPlayerEntity player, Item item) {
+        int[] total = {0};
+        try {
+            ensureReflection();
+        } catch (Throwable t) {
+            return 0;
+        }
+        PlayerInventoryProvider.get().runOnBackpacks(player, (backpackStack, invIdentifier, identifier, slot) -> {
+            try {
+                ITrackedContentsItemHandler handler = handlerOf(backpackStack);
+                if (handler == null) {
+                    return false;
+                }
+                int slots = (Integer) slotCountGetter.invoke(handler);
+                for (int i = 0; i < slots; i++) {
+                    ItemStack s = (ItemStack) slotStackGetter.invoke(handler, i);
+                    if (s != null && !s.isEmpty() && s.isOf(item)) {
+                        total[0] += s.getCount();
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return false;   // false = 继续遍历下一个背包
+        });
+        return total[0];
+    }
+
     public static void extract(ServerPlayerEntity player, Identifier itemId, int count) {
         int reason = SbpPayloads.NOT_FOUND;
         lastStashed.clear();
