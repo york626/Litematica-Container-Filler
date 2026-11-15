@@ -112,6 +112,12 @@ public class Callbacks implements IHotkeyCallback {
             return true;
         }
 
+        // 【提取二级材料到当前容器】（Ray 2026-11-15 从工具箱移植）
+        if (key == Hotkeys.EXTRACT_SECONDARY_MATERIALS.getKeybind()) {
+            com.mimicenzymes.litematicafiller.tool.SecondaryExtractClient.trigger(mc);
+            return true;
+        }
+
         return false;
     }
 

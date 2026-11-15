@@ -453,6 +453,79 @@ public class FillMaterialCalculator {
         }
     }
 
+    /**
+     * 【提取二级材料】（Ray 2026-11-15 从工具箱移植）当前清单里**需要拿去合成**的原料：物品 → 数量。
+     *
+     * <p>判定与 {@link #expandCraftingIngredients} 完全同一套（只展开一层、受二级阈值限制、
+     * 每行只按第一条匹配配方），区别只在于**只返回原料本身**、不改动一级清单、也不做"已有"扣减
+     * （扣减交给服务端按「目标容器里已有」做预算）。
+     *
+     * @return 物品 → 需求数量；清单拿不到（没打开过材料列表）⇒ {@code null}
+     */
+    public static Map<net.minecraft.item.Item, Integer> collectSecondaryNeeds() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        MaterialListBase materialList = DataManager.getMaterialList();
+        if (client.player == null || client.player.networkHandler == null || materialList == null) {
+            return null;
+        }
+        List<MaterialListEntry> displayed = displayedMaterialRows;
+        List<MaterialListEntry> rows = displayed.isEmpty()
+                ? materialList.getMaterialsMissingOnly(true)
+                : displayed;
+        int secondaryThreshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+        Map<net.minecraft.item.Item, Integer> out = new LinkedHashMap<>();
+        try {
+            var recipeManager = client.player.networkHandler.getRecipeManager();
+            var registryLookup = client.player.getWorld().getRegistryManager();
+            List<net.minecraft.recipe.RecipeEntry<net.minecraft.recipe.CraftingRecipe>> crafting = new ArrayList<>();
+            for (var entry : recipeManager.values()) {
+                if (entry.value() instanceof net.minecraft.recipe.CraftingRecipe cr) {
+                    crafting.add(new net.minecraft.recipe.RecipeEntry<>(entry.id(), cr));
+                }
+            }
+            for (MaterialListEntry row : rows) {
+                if (row == null || row.getStack().isEmpty()) {
+                    continue;
+                }
+                int missing = Math.max(0, row.getCountTotal() - countHeldNow(client, row.getStack().getItem()));
+                if (missing <= 0 || missing > secondaryThreshold) {
+                    continue;
+                }
+                net.minecraft.item.Item wantItem = row.getStack().getItem();
+                for (var recipeEntry : crafting) {
+                    net.minecraft.item.ItemStack output;
+                    try {
+                        output = recipeEntry.value().getResult(registryLookup);
+                    } catch (Throwable ignored) {
+                        continue;
+                    }
+                    if (output.isEmpty() || output.getItem() != wantItem) {
+                        continue;
+                    }
+                    int outPerCraft = Math.max(1, output.getCount());
+                    int times = (int) Math.ceil((double) missing / outPerCraft);
+                    for (net.minecraft.recipe.Ingredient ingredient : recipeEntry.value().getIngredients()) {
+                        if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
+                            continue;
+                        }
+                        ItemStack[] options = ingredient.getMatchingStacks();
+                        if (options == null || options.length == 0 || options[0].isEmpty()) {
+                            continue;
+                        }
+                        int need = options[0].getCount() * times;
+                        if (need > 0) {
+                            out.merge(options[0].getItem(), need, Integer::sum);
+                        }
+                    }
+                    break;   // 每行只按第一条匹配配方展开（与收集逻辑一致）
+                }
+            }
+            return out;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     public static void requestMaterialReplacementRefresh() {
         seenGlobalReplacementVersion = MaterialReplacer.getGlobalReplacementVersion();
         seenSchematicReplacementVersion = MaterialReplacer.getSchematicReplacementVersion();

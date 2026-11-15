@@ -119,6 +119,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigInteger AUTO_COLLECT_SECONDARY_THRESHOLD = new ConfigInteger("litematica_container_filler.config.name.autoCollectSecondaryThreshold", 64, 0, 9999, "litematica_container_filler.config.comment.autoCollectSecondaryThreshold");
     //【自动收集·带上二级材料】总开关（Ray 2026-11-15 定稿：默认带上；关＝纯严格模式，显示多少收多少）
     public static final ConfigBoolean AUTO_COLLECT_SECONDARY_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.autoCollectSecondaryEnabled", true, "litematica_container_filler.config.comment.autoCollectSecondaryEnabled");
+    //【提取二级材料到当前容器】（Ray 2026-11-15 从工具箱移植：准星容器 ⇄ 背包，方向与自动收集相反）
+    public static final ConfigBoolean EXTRACT_SECONDARY_ENABLED      = new ConfigBoolean("litematica_container_filler.config.name.extractSecondaryEnabled", true, "litematica_container_filler.config.comment.extractSecondaryEnabled");
     /** 「填充容器」的取物模式：物品列表 / 手持物品（对齐打印机「填充」页）。 */
     public static final ConfigOptionList BATCH_FILL_ITEM_MODE        = new ConfigOptionList("litematica_container_filler.config.name.batchFillItemMode", BatchFillItemMode.BLOCKLIST, "litematica_container_filler.config.comment.batchFillItemMode");
     /** 「填充容器」物品列表模式用的物品 ID 列表（按顺序优先）。 */
@@ -247,7 +249,8 @@ public class Configs implements IConfigHandler {
                 BATCH_FILL_ITEM_LIST,
                 AUTO_COLLECT_ENABLED,
                 AUTO_COLLECT_SECONDARY_ENABLED,
-                AUTO_COLLECT_SECONDARY_THRESHOLD
+                AUTO_COLLECT_SECONDARY_THRESHOLD,
+                EXTRACT_SECONDARY_ENABLED
         );
 
         RENDER_OPTIONS = ImmutableList.of(

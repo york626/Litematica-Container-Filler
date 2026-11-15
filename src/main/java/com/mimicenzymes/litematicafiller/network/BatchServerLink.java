@@ -631,7 +631,7 @@ public final class BatchServerLink {
     }
 
     /** 客户端背包副本同步：显式逐槽 SetSlot 包（sendContentUpdates 的变更检测在直改路径不可靠）。 */
-    private static void syncPlayerInventoryToClient(ServerPlayerEntity player) {
+    public static void syncPlayerInventoryToClient(ServerPlayerEntity player) {
         try {
             ScreenHandler handler = player.playerScreenHandler;
             for (int i = 0; i < handler.slots.size(); i++) {

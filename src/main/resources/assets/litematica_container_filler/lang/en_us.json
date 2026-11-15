@@ -449,5 +449,9 @@
   "litematica_container_filler.config.name.autoCollectSecondaryThreshold": "Auto Collect Secondary Threshold",
   "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "Only expand crafting ingredients for rows missing up to this many items. Rows missing more than this (e.g. 1198 hoppers needing ~6000 iron ingots) are collected as-is without their ingredients. Default 64.",
   "litematica_container_filler.config.name.autoCollectSecondaryEnabled": "Include Secondary Materials",
-  "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "On (default): also collect crafting ingredients of the missing rows (limited by the secondary threshold). Off: strict mode — collect exactly what the list shows, no ingredients (good for inventory transfer)."
+  "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "On (default): also collect crafting ingredients of the missing rows (limited by the secondary threshold). Off: strict mode — collect exactly what the list shows, no ingredients (good for inventory transfer).",
+  "litematica_container_filler.config.name.extractSecondaryEnabled": "Extract secondary materials to container",
+  "litematica_container_filler.config.comment.extractSecondaryEnabled": "On: the hotkey moves the ingredients needed for crafting (secondary materials) into the targeted container, budgeted by 'need - already in container'. Off: hotkey only shows a hint.",
+  "litematica_container_filler.hotkey.name.extractSecondaryMaterials": "Extract secondary materials to container",
+  "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "Aim at a container and press: moves the ingredients needed for crafting into it (opposite direction of auto-collect). Open the material list (M) once first."
 }

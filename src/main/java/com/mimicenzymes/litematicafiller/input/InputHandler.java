@@ -23,6 +23,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler {
         Hotkeys.CLEAR_MANUAL_OVERRIDES.getKeybind().setCallback(Callbacks.getInstance());
         Hotkeys.BATCH_TOOL_TRIGGER.getKeybind().setCallback(Callbacks.getInstance());
         Hotkeys.BATCH_TOOL_CANCEL.getKeybind().setCallback(Callbacks.getInstance());
+        Hotkeys.EXTRACT_SECONDARY_MATERIALS.getKeybind().setCallback(Callbacks.getInstance());
     }
 
     @Override

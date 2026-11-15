@@ -451,5 +451,9 @@
   "litematica_container_filler.config.name.autoCollectSecondaryThreshold": "二级展开阈值",
   "litematica_container_filler.config.comment.autoCollectSecondaryThreshold": "缺失量不超过此值的行才展开合成原料（例如漏斗缺 1198 个需要 6000 铁锭，就不会展开它的原料）。小缺料（如海晶灯缺 1）照常展开。默认 64。",
   "litematica_container_filler.config.name.autoCollectSecondaryEnabled": "带上二级材料",
-  "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "开（默认）：收集清单缺料时把它们的合成原料也一并收齐（受「二级展开阈值」限制）——备货一次到位。关：纯严格模式，显示多少收多少，不带原料（适合清点/转运）。"
+  "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "开（默认）：收集清单缺料时把它们的合成原料也一并收齐（受「二级展开阈值」限制）——备货一次到位。关：纯严格模式，显示多少收多少，不带原料（适合清点/转运）。",
+  "litematica_container_filler.config.name.extractSecondaryEnabled": "提取二级材料到当前容器",
+  "litematica_container_filler.config.comment.extractSecondaryEnabled": "打开：热键会把材料清单里「需要先合成的那部分原料」按需塞进准星容器（服务端直连、盒装自动拆取）；关：热键只提示不动作。",
+  "litematica_container_filler.hotkey.name.extractSecondaryMaterials": "提取二级材料到当前容器",
+  "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "准星对着容器按一下：把清单里需要合成的原料（例：4 个台阶 ← 3 个平滑石英块）按「需求 − 容器已有」搬进去，方向与自动收集相反。先打开一次材料列表（M）才有清单。"
 }

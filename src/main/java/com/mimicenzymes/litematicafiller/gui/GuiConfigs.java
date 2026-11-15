@@ -101,6 +101,7 @@ public class GuiConfigs extends GuiConfigsBase {
                 // Ray 2026-11-15：把「批量工具触发 / 取消」挪到页面**最底部**——
                 // 自动收集那两个热键跟上面的"带二级/阈值"是一组，批量工具的两个键放最后更好找。
                 list.add(new ConfigOptionWrapper(Hotkeys.AUTO_COLLECT_TRIGGER));
+                list.add(new ConfigOptionWrapper(Hotkeys.EXTRACT_SECONDARY_MATERIALS));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_TRIGGER));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_CANCEL));
             }
