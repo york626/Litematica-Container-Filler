@@ -136,20 +136,29 @@ public final class SecondaryExtractServer {
                 return;
             }
             int moved = 0;
-            // ① 先扫 Trinkets 装备槽：**穿在身上的精妙背包**不在 player.getInventory() 里
-            //    （Ray 2026-11-14 要求覆盖）；Trinkets 没装 ⇒ 静默跳过。
-            moved += drainEquippedTrinkets(player, target, remaining);
-            // ② 再遍历玩家背包（main + 盔甲 + 副手）
             var inventory = player.getInventory();
-            for (int slot = 0; slot < inventory.size(); slot++) {
+            // ① **散装优先**（Ray 2026-11-16：「背包里有 10 个散货，却先从盒装里提取」——
+            //    旧版按槽位顺序走，盒子排在散货前面就先把盒子拆了）。
+            for (int slot = 0; slot < inventory.size() && !remaining.isEmpty(); slot++) {
                 ItemStack stack = inventory.getStack(slot);
-                if (stack.isEmpty()) {
+                if (stack.isEmpty() || !remaining.containsKey(stack.getItem())) {
                     continue;
                 }
-                if (remaining.containsKey(stack.getItem())) {
-                    // 散装材料：按预算塞进容器（预算内有多少搬多少，超出预算的不动）
-                    moved += takeInto(target, stack, remaining);
-                } else if (isSophisticatedBackpack(stack)) {
+                // 散装材料：按预算塞进容器（预算内有多少搬多少，超出预算的不动）
+                moved += takeInto(target, stack, remaining);
+            }
+            int movedLoose = moved;
+            // ② 散装不够 ⇒ 再用「穿在身上的精妙背包」与背包里的盒子 / 精妙背包补齐
+            //    （Trinkets 装备槽：穿在身上的精妙背包不在 player.getInventory() 里，Ray 2026-11-14 要求覆盖）
+            if (!remaining.isEmpty()) {
+                moved += drainEquippedTrinkets(player, target, remaining);
+            }
+            for (int slot = 0; slot < inventory.size() && !remaining.isEmpty(); slot++) {
+                ItemStack stack = inventory.getStack(slot);
+                if (stack.isEmpty() || remaining.containsKey(stack.getItem())) {
+                    continue;
+                }
+                if (isSophisticatedBackpack(stack)) {
                     // 精妙背包（内容在 sbp 自己的服务端数据里）⇒ 反射拆开
                     moved += drainBackpack(player, target, stack, remaining);
                     // 盒子里剩下的（不是本次要的材料）还能再拆一层
@@ -159,6 +168,8 @@ public final class SecondaryExtractServer {
                     moved += drainContainer(target, stack, remaining);
                 }
             }
+            LOGGER.info("[extract] 提取顺序：先散装 {} 个，散装不够再用盒装/精妙背包（共 {} 个）",
+                    movedLoose, moved);
             if (moved > 0 || movedBoxes > 0) {
                 player.getInventory().markDirty();
                 if (blockEntity instanceof Inventory inv) {
