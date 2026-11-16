@@ -126,7 +126,7 @@ public abstract class MixinMaterialListHudRenderer {
             Boolean previous = raytoolbox$lastSatisfied.put(own, hint.satisfied());
             if (previous == null || previous.booleanValue() != hint.satisfied()) {
                 LOGGER.info(
-                        "[raytoolbox] 二级材料判定：{} 需要 {} → {}｜身上 {} / 总需 {}（{}）",
+                        "[material-list] 二级材料判定：{} 需要 {} → {}｜身上 {} / 总需 {}（{}）",
                         own.getName().getString(), hint.amount(),
                         hint.inputItem().getName().getString(),
                         hint.available(), hint.need(),

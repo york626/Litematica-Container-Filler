@@ -208,7 +208,7 @@ public final class MaterialBreakdownHint {
             // 首次成功只在日志里打一条：用来确认功能真的生效（第三方 mixin 最怕静默失效），
             // 顺便把「统计到多少」打出来 —— 潜影盒/精妙背包有没有算进去，一眼就能看出来。
             if (LOGGED.compareAndSet(false, true)) {
-                LOGGER.info("[raytoolbox] 二级材料折算已生效：{} × {} → {}（身上 {}，总需 {}，备够={}）",
+                LOGGER.info("[material-list] 二级材料折算已生效：{} × {} → {}（身上 {}，总需 {}，备够={}）",
                         required.getItem().getName().getString(), needed, text, firstAvailable, firstNeed, allSatisfied);
             }
             return new Result(text.toString(), allSatisfied, demands, hint.bidirectional, firstAvailable, firstNeed);
@@ -237,7 +237,7 @@ public final class MaterialBreakdownHint {
     public static void logFilterAppliedOnce() {
         if (FILTER_LOGGED.compareAndSet(false, true)) {
             LOGGER.info(
-                    "[raytoolbox] 材料列表「总备货需求裁决」已生效（够 982 才隐藏、丢材料会重新出现）");
+                    "[material-list] 材料列表「总备货需求裁决」已生效（够 982 才隐藏、丢材料会重新出现）");
         }
     }
 
