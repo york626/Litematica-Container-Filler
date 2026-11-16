@@ -35,7 +35,9 @@
     "MixinTaskCountBlocksPlacementIgnoreEnabled",
     "MixinTaskCountBlocksPlacementOfflineSampler",
     "MixinTaskCountBlocksBaseStopLog",
-    "MixinHandledScreenMaterialHighlight"
+    "MixinHandledScreenMaterialHighlight",
+    "MixinMaterialListHudRenderer",
+    "MixinMaterialListBaseSynthesisFilter"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -60,4 +60,26 @@ public final class MaterialListDiagnostics {
     public static void logSelfRepair(int rebuiltSize) {
         LOGGER.info("[material-list] 任务写空但统计有数 ⇒ 自愈重建 {} 条", rebuiltSize);
     }
+
+    /** 材料列表过滤重建已接管（只打一次）。 */
+    private static boolean rebuildLogged;
+
+    public static void logRebuildOnce() {
+        if (!rebuildLogged) {
+            rebuildLogged = true;
+            LOGGER.info("[material-list] 材料列表：统计完成后已自动重建可见列表");
+        }
+    }
+
+    /** 统计任务收尾（只确认它跑过；具体条数看下一行 {@link #logListSize}）。 */
+    public static void logListSize(int all, int visible) {
+        long now = System.currentTimeMillis();
+        if (now - lastListSizeLog < 3000L && lastListSizeLog != 0L) {
+            return;
+        }
+        lastListSizeLog = now;
+        LOGGER.info("[material-list] 材料清单：共 {} 条，当前可见 {} 条", all, visible);
+    }
+
+    private static long lastListSizeLog;
 }

@@ -135,6 +135,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialListIgnorePlacementEnabled", true, "litematica_container_filler.config.comment.materialListIgnorePlacementEnabled");
     /** 高亮材料列表物品：打开容器时按**当前视图**的缺料高亮槽位（约 3 秒渐隐）。 */
     public static final ConfigBoolean MATERIAL_HIGHLIGHT                        = new ConfigBoolean("litematica_container_filler.config.name.materialHighlight", true, "litematica_container_filler.config.comment.materialHighlight");
+    /** 二级材料显示：材料列表每行追加「←N 原料 / ≈N 可互换物」，备够变白、没备够变灰；数量列同款写法。 */
+    public static final ConfigBoolean MATERIAL_BREAKDOWN                        = new ConfigBoolean("litematica_container_filler.config.name.materialBreakdown", true, "litematica_container_filler.config.comment.materialBreakdown");
 
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
@@ -227,7 +229,8 @@ public class Configs implements IConfigHandler {
                 MATERIAL_LIST_GROUP_SORT,
                 MATERIAL_LIST_HUD_TWEAK,
                 MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED,
-                MATERIAL_HIGHLIGHT
+                MATERIAL_HIGHLIGHT,
+                MATERIAL_BREAKDOWN
         );
 
         TOOL_OPTIONS = ImmutableList.of(
