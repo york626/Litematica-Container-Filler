@@ -237,7 +237,7 @@ public final class MaterialBreakdownHint {
     public static void logFilterAppliedOnce() {
         if (FILTER_LOGGED.compareAndSet(false, true)) {
             LOGGER.info(
-                    "[material-list] 材料列表「总备货需求裁决」已生效（够 982 才隐藏、丢材料会重新出现）");
+                    "[material-list] 材料列表裁决已生效（够自身需求才隐藏、丢材料会重新出现）");
         }
     }
 
