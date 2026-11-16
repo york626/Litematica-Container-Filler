@@ -106,14 +106,15 @@ public final class AutoCollectController {
             return;
         }
         // ③ 清单缓存要热（材料列表打开/刷新过）
-        List<ItemStack> missing = FillMaterialCalculator.getCurrentMissingForAutoCollect();
+        FillMaterialCalculator.AutoCollectResult result = FillMaterialCalculator.getCurrentMissingForAutoCollect();
+        List<ItemStack> missing = result.items();
         if (missing.isEmpty()) {
             actionbar(client, "当前视图没有缺失材料（材料列表切到容器/全部后收集量会跟着变）");
             return;
         }
         // ④ 发送（服务端：背包 → 潜影盒/精妙背包补救 → 塞准星容器）
         try {
-            BatchServerLink.sendCollectMissing(pos, missing);
+            BatchServerLink.sendCollectMissing(pos, missing, result.plan());
             actionbar(client, "自动收集已发出：" + missing.size() + " 种缺失材料 ← 准星容器收进背包");
             StringBuilder detail = new StringBuilder();
             for (ItemStack want : missing) {

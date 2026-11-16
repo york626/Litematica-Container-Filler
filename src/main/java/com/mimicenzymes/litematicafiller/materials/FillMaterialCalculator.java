@@ -232,19 +232,32 @@ public class FillMaterialCalculator {
         displayedMaterialRows = list;
     }
 
-    public static List<ItemStack> getCurrentMissingForAutoCollect() {
+    /**
+     * 【自动收集】结果：要收的清单 ＋ 二级计划。
+     *
+     * <p>⭐ v1.19.1-Ray（Ray 2026-11-16：「材料列表缺 2 个箱子，自动收集把 16 个橡木木板也收来了——
+     * 有成品就不用收原料了」）：服务端拿 {@code plan} 判断「容器里成品够整行需求 ⇒ 这行的原料不必收」。
+     */
+    public record AutoCollectResult(List<ItemStack> items, List<SecondaryPlan> plan) {
+    }
+
+    /** 【自动收集】一条二级计划：一级成品 + 本行缺量 + 本行展开的原料（原始量，未扣富余）。 */
+    public record SecondaryPlan(net.minecraft.item.Item primary, int need, List<ItemStack> ingredients) {
+    }
+
+    public static AutoCollectResult getCurrentMissingForAutoCollect() {
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
         if (client.player == null || materialList == null) {
-            return List.of();
+            return new AutoCollectResult(List.of(), List.of());
         }
         // 优先用「GUI 当前显示的行」（视图+搜索过滤后）——Ray 定稿口径：按显示的材料列表收集
         List<MaterialListEntry> displayed = displayedMaterialRows;
         List<ItemStack> fromDisplayed = missingStacksFromRows(displayed);
         if (!fromDisplayed.isEmpty()) {
-            expandCraftingIngredients(fromDisplayed, client);
+            List<SecondaryPlan> plan = expandCraftingIngredients(fromDisplayed, client);
             logAutoCollectDetail("displayed(" + displayed.size() + "行)", displayed, fromDisplayed, client);
-            return fromDisplayed;
+            return new AutoCollectResult(fromDisplayed, plan);
         }
         List<MaterialListEntry> rows;
         String path;
@@ -266,12 +279,12 @@ public class FillMaterialCalculator {
                 path = "方块视图(实时)";
             }
         } catch (Exception e) {
-            return List.of();
+            return new AutoCollectResult(List.of(), List.of());
         }
         List<ItemStack> out = missingStacksFromRows(rows);
-        expandCraftingIngredients(out, client);
+        List<SecondaryPlan> plan = expandCraftingIngredients(out, client);
         logAutoCollectDetail(path + "(" + rows.size() + "行)", rows, out, client);
-        return out;
+        return new AutoCollectResult(out, plan);
     }
 
     /**
@@ -471,14 +484,14 @@ public class FillMaterialCalculator {
      * 对每个缺失行找它的合成配方，按「缺失量 ÷ 单次产量」向上取整折算原料量，**再减去身上已有**
      * （玩家背包 36 格）——身上够的部分不重复收。只展开一层（原料不再递归）。
      */
-    private static void expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client) {
+    private static List<SecondaryPlan> expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client) {
         // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式，
         // 显示多少收多少、不带原料——清点/转运场景）
         if (!com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()) {
-            return;
+            return List.of();
         }
         if (wanted.isEmpty() || client.player == null || client.player.networkHandler == null) {
-            return;
+            return List.of();
         }
         var recipeManager = client.player.networkHandler.getRecipeManager();
         var registryLookup = client.player.getWorld().getRegistryManager();
@@ -496,6 +509,8 @@ public class FillMaterialCalculator {
             sources.add(new SourceRow(want, want.getCount()));
         }
         List<ItemStack> additions = new ArrayList<>();
+        // ⭐ v1.19.1-Ray：本行展开出来的原料（原始量）也记下来，服务端据此判断「成品够就跳过原料」
+        List<SecondaryPlan> plan = new ArrayList<>();
         int secondaryThreshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
         // ★ v1.16.26-Ray（Ray 2026-11-16：「还缺 1 个平滑石英块，自动收集没提取过来」）：
         //   **先把所有行的原料按物品聚合，再统一扣一次「已有富余」**。
@@ -526,6 +541,7 @@ public class FillMaterialCalculator {
                 }
                 int outPerCraft = Math.max(1, output.getCount());
                 int times = (int) Math.ceil((double) wantMissing / outPerCraft);
+                Map<net.minecraft.item.Item, Integer> rowNeeds = new LinkedHashMap<>();
                 for (net.minecraft.recipe.Ingredient ingredient : recipe.getIngredients()) {
                     if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
                         continue;
@@ -536,8 +552,16 @@ public class FillMaterialCalculator {
                     }
                     int need = options[0].getCount() * times;
                     if (need > 0) {
-                        totalNeeds.merge(options[0].getItem(), need, Integer::sum);
+                        rowNeeds.merge(options[0].getItem(), need, Integer::sum);
                     }
+                }
+                if (!rowNeeds.isEmpty()) {
+                    List<ItemStack> rowIngredients = new ArrayList<>();
+                    rowNeeds.forEach((item, amount) -> {
+                        totalNeeds.merge(item, amount, Integer::sum);
+                        rowIngredients.add(new ItemStack(item, amount));
+                    });
+                    plan.add(new SecondaryPlan(want.getItem(), wantMissing, rowIngredients));
                 }
                 break; // 每行只按第一条匹配配方展开
             }
@@ -573,6 +597,7 @@ public class FillMaterialCalculator {
                 wanted.add(add);
             }
         }
+        return plan;
     }
 
     /**

@@ -87,9 +87,11 @@ public final class BatchServerLink {
      * C2S：对一个容器执行批量动作。
      *
      * <p>{@code targets}＝按投影填充的槽位目标；{@code items}＝填充容器的候选物品
-     * （**批量开始时**在客户端确定好——手持模式锁"那一刻主手里的东西"，避免填到一半主手空了整批停摆）。</p>
+     * （**批量开始时**在客户端确定好——手持模式锁"那一刻主手里的东西"，避免填到一半主手空了整批停摆）；
+     * {@code plan}＝自动收集的**二级计划**（一级成品 → 它的原料），服务端据此在「成品已经够」时跳过原料。</p>
      */
-    public record Action(long pos, int action, List<Target> targets, List<ItemStack> items) implements CustomPayload {
+    public record Action(long pos, int action, List<Target> targets, List<ItemStack> items,
+                         List<SecondaryPlanEntry> plan) implements CustomPayload {
         public static final Id<Action> ID = new Id<>(Identifier.of("litematica_container_filler", "batch_action"));
 
         public static final PacketCodec<RegistryByteBuf, Action> CODEC =
@@ -106,6 +108,17 @@ public final class BatchServerLink {
             buf.writeVarInt(value.items().size());
             for (ItemStack item : value.items()) {
                 ItemStack.OPTIONAL_PACKET_CODEC.encode(buf, item);
+            }
+            buf.writeVarInt(value.plan() == null ? 0 : value.plan().size());
+            if (value.plan() != null) {
+                for (SecondaryPlanEntry entry : value.plan()) {
+                    buf.writeIdentifier(Registries.ITEM.getId(entry.primary()));
+                    buf.writeVarInt(entry.need());
+                    buf.writeVarInt(entry.ingredients().size());
+                    for (ItemStack ingredient : entry.ingredients()) {
+                        ItemStack.OPTIONAL_PACKET_CODEC.encode(buf, ingredient);
+                    }
+                }
             }
         }
 
@@ -124,13 +137,29 @@ public final class BatchServerLink {
             for (int i = 0; i < itemCount; i++) {
                 items.add(ItemStack.OPTIONAL_PACKET_CODEC.decode(buf));
             }
-            return new Action(pos, action, targets, items);
+            int planCount = buf.readVarInt();
+            List<SecondaryPlanEntry> plan = new ArrayList<>(Math.min(planCount, 256));
+            for (int i = 0; i < planCount; i++) {
+                Item primary = Registries.ITEM.get(buf.readIdentifier());
+                int need = buf.readVarInt();
+                int ingCount = buf.readVarInt();
+                List<ItemStack> ingredients = new ArrayList<>(Math.min(ingCount, 32));
+                for (int j = 0; j < ingCount; j++) {
+                    ingredients.add(ItemStack.OPTIONAL_PACKET_CODEC.decode(buf));
+                }
+                plan.add(new SecondaryPlanEntry(primary, need, ingredients));
+            }
+            return new Action(pos, action, targets, items, plan);
         }
 
         @Override
         public Id<? extends CustomPayload> getId() {
             return ID;
         }
+    }
+
+    /** 【自动收集】二级计划条目：一级成品、本行缺量、本行原料（原始量）。 */
+    public record SecondaryPlanEntry(Item primary, int need, List<ItemStack> ingredients) {
     }
 
     /** S2C：单格回执。 */
@@ -187,13 +216,25 @@ public final class BatchServerLink {
     }
 
     /** 【自动收集投影材料】发送（客户端长按触发；缺料清单来自材料列表「全部」视图缓存）。 */
-    public static void sendCollectMissing(BlockPos pos, List<ItemStack> missing) {
-        sendAction(pos, ACTION_COLLECT_MISSING, List.of(), missing);
+    public static void sendCollectMissing(BlockPos pos, List<ItemStack> missing,
+                                          List<com.mimicenzymes.litematicafiller.materials.FillMaterialCalculator.SecondaryPlan> plan) {
+        List<SecondaryPlanEntry> entries = new ArrayList<>();
+        if (plan != null) {
+            for (com.mimicenzymes.litematicafiller.materials.FillMaterialCalculator.SecondaryPlan p : plan) {
+                entries.add(new SecondaryPlanEntry(p.primary(), p.need(), p.ingredients()));
+            }
+        }
+        sendAction(pos, ACTION_COLLECT_MISSING, List.of(), missing, entries);
     }
 
     public static void sendAction(BlockPos pos, int action, List<Target> targets, List<ItemStack> items) {
+        sendAction(pos, action, targets, items, List.of());
+    }
+
+    public static void sendAction(BlockPos pos, int action, List<Target> targets, List<ItemStack> items,
+                                  List<SecondaryPlanEntry> plan) {
         try {
-            ClientPlayNetworking.send(new Action(pos.asLong(), action, targets, items));
+            ClientPlayNetworking.send(new Action(pos.asLong(), action, targets, items, plan));
         } catch (Throwable t) {
             LOGGER.warn("[batch] 直连请求发送失败 pos={}", pos, t);
         }
@@ -250,7 +291,7 @@ public final class BatchServerLink {
                 case ACTION_CLEAR -> handleClear(posLong, player, inv);
                 case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv, payload.items());
                 case ACTION_SCHEMATIC_FILL -> handleSchematicFill(posLong, player, inv, payload.targets());
-                case ACTION_COLLECT_MISSING -> handleCollectToPlayer(posLong, player, inv, payload.items());
+                case ACTION_COLLECT_MISSING -> handleCollectToPlayer(posLong, player, inv, payload.items(), payload.plan());
                 default -> sendResult(player, posLong, RESULT_FAILED, 0);
             }
         } catch (Throwable t) {
@@ -464,7 +505,101 @@ public final class BatchServerLink {
      *       已收的保留、没收的留在容器（绝不 offerOrDrop 丢东西）。</li>
      * </ul>
      */
-    private static void handleCollectToPlayer(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted) {
+    /**
+     * 见 {@link #handleCollectToPlayer}：按容器里一级成品的**可用量**折算二级原料该收多少。
+     *
+     * <p>Ray 2026-11-16：「材料列表缺 2 个箱子，自动收集把 16 个橡木木板也收来了——有成品就不用收原料了」。
+     * <ul>
+     *   <li>成品够整行 ⇒ 这行原料全不收（缺 2 箱子、容器有 2 箱子 ⇒ 木板 16 全跳过）；</li>
+     *   <li>成品只够一部分 ⇒ 只收**不足部分**对应的原料（缺 3 箱子、容器有 2 ⇒ 木板按 1 个箱子算）；</li>
+     *   <li>原料本身也是一级行 ⇒ 一律不动（那是直接放置要用的）。</li>
+     * </ul>
+     * 折算用「原料量 × 缺额 / 本行需求量，向上取整」——展开量本来就是按整份需求线性算出来的，误差只在最后一份。
+     */
+    private static void applySecondaryPlan(Inventory inv, Map<Item, Integer> wantedCount,
+                                           List<SecondaryPlanEntry> plan) {
+        if (plan == null || plan.isEmpty() || wantedCount.isEmpty()) {
+            return;
+        }
+        try {
+            Set<Item> primaryItems = new HashSet<>();
+            for (SecondaryPlanEntry entry : plan) {
+                if (entry.primary() != null) {
+                    primaryItems.add(entry.primary());
+                }
+            }
+            Map<Item, Integer> drop = new LinkedHashMap<>();
+            for (SecondaryPlanEntry entry : plan) {
+                if (entry.primary() == null || entry.need() <= 0) {
+                    continue;
+                }
+                int available = countAvailableInContainer(inv, entry.primary());
+                int shortfall = Math.max(0, entry.need() - available);
+                for (ItemStack ingredient : entry.ingredients()) {
+                    if (ingredient == null || ingredient.isEmpty() || primaryItems.contains(ingredient.getItem())) {
+                        continue;   // 原料本身也是一级行：不动
+                    }
+                    int keep = (int) Math.ceil(ingredient.getCount() * (double) shortfall / (double) entry.need());
+                    int skip = ingredient.getCount() - keep;
+                    if (skip > 0) {
+                        drop.merge(ingredient.getItem(), skip, Integer::sum);
+                    }
+                }
+            }
+            if (drop.isEmpty()) {
+                return;
+            }
+            List<String> skipped = new ArrayList<>();
+            for (Map.Entry<Item, Integer> e : drop.entrySet()) {
+                Integer cur = wantedCount.get(e.getKey());
+                if (cur == null || cur <= 0) {
+                    continue;
+                }
+                int next = Math.max(0, cur - e.getValue());
+                if (next <= 0) {
+                    wantedCount.remove(e.getKey());
+                } else {
+                    wantedCount.put(e.getKey(), next);
+                }
+                skipped.add(net.minecraft.registry.Registries.ITEM.getId(e.getKey()).getPath() + "×" + e.getValue());
+            }
+            if (!skipped.isEmpty()) {
+                LOGGER.info("[auto-collect] 容器里一级成品已够（或够一部分）⇒ 跳过二级原料：{}",
+                        String.join(", ", skipped));
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[auto-collect] 二级原料折算出错（按原清单继续）", t);
+        }
+    }
+
+    /** 容器（含盒内一层）里某种物品可用的数量。 */
+    private static int countAvailableInContainer(Inventory inv, Item item) {
+        int total = 0;
+        if (inv == null || item == null) {
+            return 0;
+        }
+        for (int i = 0; i < inv.size(); i++) {
+            ItemStack stack = inv.getStack(i);
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            if (stack.isOf(item)) {
+                total += stack.getCount();
+            }
+            ContainerComponent comp = stack.get(DataComponentTypes.CONTAINER);
+            if (comp != null) {
+                for (ItemStack inner : comp.iterateNonEmpty()) {
+                    if (inner != null && !inner.isEmpty() && inner.isOf(item)) {
+                        total += inner.getCount();
+                    }
+                }
+            }
+        }
+        return total;
+    }
+
+    private static void handleCollectToPlayer(long posLong, ServerPlayerEntity player, Inventory inv, List<ItemStack> wanted,
+                                              List<SecondaryPlanEntry> plan) {
         try {
             StringBuilder detail = new StringBuilder();
             for (ItemStack want : wanted) {
@@ -485,6 +620,10 @@ public final class BatchServerLink {
             }
             wantedCount.merge(want.getItem(), want.getCount(), Integer::sum);
         }
+        // ⭐ v1.19.1-Ray（Ray 2026-11-16：「材料列表缺 2 个箱子，自动收集把 16 个橡木木板也收来了——
+        //   有成品就不用收原料了，成品直接一步到位」）：**先看容器里一级成品够不够**；
+        //   够整行需求 ⇒ 这行展开出来的二级原料不再收（原料本身也是一级行的、或别的成品不够的行还要用的，不动）。
+        applySecondaryPlan(inv, wantedCount, plan);
         // 【v1.16.21-Ray（Ray 2026-11-15）】**客户端已经发净缺口了**（按按热键那一刻的背包实时算：
         // 「总量 − 身上现有」），所以服务端**不能再扣原版背包 / 盒装**——那是双扣：
         // 实测「还差 9 个二级材料」时，客户端发 9，服务端拿身上 1729 去扣 ⇒ 9 被扣成 0 ⇒ 一个都不收。
