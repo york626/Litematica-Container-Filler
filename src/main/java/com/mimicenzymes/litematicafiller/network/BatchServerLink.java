@@ -509,33 +509,60 @@ public final class BatchServerLink {
         int collectedItems = 0;
         boolean backpackFull = false;
         backpackFullFlag = false;
+        // 【v1.16.29-Ray 修】**三遍扫描：先整盒 → 再开盒 → 最后散装**。
+        // ⛔ 旧写法单遍按槽位顺序走：散装排在盒子前面时先把需要量吃掉，
+        //   轮到盒子变成「剩余 1727 < 盒内 1728」⇒ 不整搬、改成开盒取 1727 个散货。
+        //   Ray 2026-11-16 实测：仓库箱子 11 散 + 1 盒(1728)，需要 1738
+        //   ⇒ 期望「整盒 1728 + 散货 10」，实际拿到 1737 个散货。根因就是顺序。
+        // 先整盒（盒内容越多越优先，避免小盒先被开掉、把大盒的整搬机会吃掉）：
+        //   ① 需要量 ≥ 盒内该材料总量（且盒里全是缺料）⇒ **整盒搬进背包**；
+        //   ② 需要量 < 盒内量 ⇒ 留到第二遍**原地开盒按需取**（盒子留容器原位）。
+        List<Integer> boxSlots = new ArrayList<>();
+        for (int i = 0; i < inv.size(); i++) {
+            ItemStack stack = inv.getStack(i);
+            if (stack != null && !stack.isEmpty() && mimic(stack, wantedCount)) {
+                boxSlots.add(i);
+            }
+        }
+        boxSlots.sort((a, b) -> Integer.compare(boxWantedTotal(inv.getStack(b), wantedCount),
+                boxWantedTotal(inv.getStack(a), wantedCount)));
+        for (int i : boxSlots) {
+            if (backpackFull) {
+                break;
+            }
+            ItemStack stack = inv.getStack(i);
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            int takenWhole = collectWholeBoxIfWorth(stack, wantedCount, player, inv, i);
+            if (takenWhole > 0) {
+                inv.markDirty();
+                collectedSlots++;
+                collectedItems += takenWhole;
+            }
+        }
+        // 第二遍：没整搬的盒子 ⇒ 原地开盒按需取
+        for (int i : boxSlots) {
+            if (backpackFull) {
+                break;
+            }
+            ItemStack stack = inv.getStack(i);
+            if (stack == null || stack.isEmpty() || !mimic(stack, wantedCount)) {
+                continue;
+            }
+            int takenFromBox = mimic(stack, wantedCount, player);
+            if (takenFromBox > 0) {
+                inv.markDirty();
+                collectedSlots++;
+                collectedItems += takenFromBox;
+            }
+        }
+        // 第三遍：散装 —— 是清单缺料 ⇒ 按缺量拿
         for (int i = 0; i < inv.size() && !backpackFull; i++) {
             ItemStack stack = inv.getStack(i);
             if (stack == null || stack.isEmpty()) {
                 continue;
             }
-            // 盒装：潜影盒/收纳袋内容含缺料
-            // 【v1.16.16 盒装语义，Ray 2026-11-15 定稿】：
-            // ① 需要量 ≥ 盒内缺料量（且盒里装的全是缺料）⇒ **整盒搬进背包**（省开盒），剩余缺量
-            //    继续从容器后面的槽位收；背包放不下 ⇒ 退回②；
-            // ② 需要量 < 盒内量 ⇒ **原地开盒按需取**（盒子留在容器原位，只拿需要的量）。
-            if (mimic(stack, wantedCount)) {
-                int takenWhole = collectWholeBoxIfWorth(stack, wantedCount, player, inv, i);
-                if (takenWhole > 0) {
-                    inv.markDirty();
-                    collectedSlots++;
-                    collectedItems += takenWhole;
-                    continue;
-                }
-                int takenFromBox = mimic(stack, wantedCount, player);
-                if (takenFromBox > 0) {
-                    inv.markDirty();
-                    collectedSlots++;
-                    collectedItems += takenFromBox;
-                }
-                continue;
-            }
-            // 散装：是清单缺料 ⇒ 按缺量拿
             Integer stillNeeded = wantedCount.get(stack.getItem());
             if (stillNeeded == null || stillNeeded <= 0) {
                 continue;
@@ -613,7 +640,10 @@ public final class BatchServerLink {
             return 0;
         }
         for (Map.Entry<Item, Integer> e : boxCounts.entrySet()) {
-            if (wantedCount.getOrDefault(e.getKey(), 0) < e.getValue()) {
+            int still = wantedCount.getOrDefault(e.getKey(), 0);
+            if (still < e.getValue()) {
+                LOGGER.info("[auto-collect] 盒内 {}×{} > 剩余缺量 {} ⇒ 不整搬，改成开盒按需取",
+                        Registries.ITEM.getId(e.getKey()).getPath(), e.getValue(), still);
                 return 0;   // 需要量 < 盒内该材料总量 ⇒ 开盒按需取（盒子留容器原位）
             }
         }
@@ -627,6 +657,24 @@ public final class BatchServerLink {
         inv.setStack(slot, ItemStack.EMPTY);
         LOGGER.info("[auto-collect] 需要量足够 ⇒ 整盒搬进背包（{}，盒内 {} 个），剩余缺量继续从容器其他槽位收",
                 net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath(), total);
+        return total;
+    }
+
+    /** 盒内**缺料**总量（v1.16.29 排序用：盒内容越多越先整搬）。 */
+    private static int boxWantedTotal(ItemStack box, Map<Item, Integer> wantedCount) {
+        if (box == null || box.isEmpty()) {
+            return 0;
+        }
+        ContainerComponent comp = box.get(DataComponentTypes.CONTAINER);
+        if (comp == null) {
+            return 0;
+        }
+        int total = 0;
+        for (ItemStack inner : comp.iterateNonEmpty()) {
+            if (inner != null && !inner.isEmpty() && wantedCount.containsKey(inner.getItem())) {
+                total += inner.getCount();
+            }
+        }
         return total;
     }
 
