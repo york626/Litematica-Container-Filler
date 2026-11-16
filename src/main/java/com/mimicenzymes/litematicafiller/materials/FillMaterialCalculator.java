@@ -43,6 +43,8 @@ import java.nio.file.Path;
 import java.util.*;
 
 public class FillMaterialCalculator {
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
     public static boolean isFillMode = false;
     public static int listMode = 0;
 
@@ -241,29 +243,91 @@ public class FillMaterialCalculator {
         List<ItemStack> fromDisplayed = missingStacksFromRows(displayed);
         if (!fromDisplayed.isEmpty()) {
             expandCraftingIngredients(fromDisplayed, client);
+            logAutoCollectDetail("displayed(" + displayed.size() + "行)", displayed, fromDisplayed, client);
             return fromDisplayed;
         }
         List<MaterialListEntry> rows;
+        String path;
         try {
             if (listMode == 1) {
                 rows = getCustomMaterialList(materialList);
+                path = "容器视图(实时)";
             } else if (listMode == 2) {
                 List<MaterialListEntry> vanilla;
                 fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
                         materialList.getMaterialsAll(), client.player);
                 vanilla = materialList.getMaterialsMissingOnly(true);
                 rows = mergeLists(vanilla, getCustomMaterialList(materialList));
+                path = "全部视图(实时)";
             } else {
                 fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
                         materialList.getMaterialsAll(), client.player);
                 rows = materialList.getMaterialsMissingOnly(true);
+                path = "方块视图(实时)";
             }
         } catch (Exception e) {
             return List.of();
         }
         List<ItemStack> out = missingStacksFromRows(rows);
         expandCraftingIngredients(out, client);
+        logAutoCollectDetail(path + "(" + rows.size() + "行)", rows, out, client);
         return out;
+    }
+
+    /**
+     * 【判据日志】收集时把「用了哪些源行、每行总量/显示缺口/身上实有、最后发送什么」打一行。
+     *
+     * <p>Ray 2026-11-16：「缺 10 个（主行 1 + 二级 9），一次只收 9」——两边口径对不上时，
+     * 靠这一行直接看出是**源行没带主行**、还是**身上的数量与显示不一致**、还是**二级富余扣多了**。
+     */
+    private static void logAutoCollectDetail(String path, List<MaterialListEntry> rows, List<ItemStack> out,
+                                             MinecraftClient client) {
+        try {
+            StringBuilder sb = new StringBuilder("[auto-collect] 计算明细：").append(path)
+                    .append("｜视图=").append(listMode).append("｜源行：");
+            for (MaterialListEntry entry : rows) {
+                if (entry == null || entry.getStack().isEmpty()) {
+                    continue;
+                }
+                net.minecraft.item.Item item = entry.getStack().getItem();
+                sb.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath())
+                        .append("(总").append(entry.getCountTotal())
+                        .append("/显缺").append(entry.getCountMissing())
+                        .append("/持").append(countHeldNow(client, item)).append(") ");
+            }
+            sb.append("⇒ 发送：");
+            for (ItemStack stack : out) {
+                sb.append(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath())
+                        .append('×').append(stack.getCount()).append(' ');
+            }
+            // v1.16.27 诊断：两个「自己的总需求」来源各算出来是多少（判断 getMaterialsAll 是否被视图改写）
+            MaterialListBase list = DataManager.getMaterialList();
+            if (list != null) {
+                sb.append("｜素材库：");
+                for (ItemStack stack : out) {
+                    net.minecraft.item.Item item = stack.getItem();
+                    sb.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath())
+                            .append("{all=").append(totalOf(list.getMaterialsAll(), item))
+                            .append(",custom=").append(totalOf(getCustomMaterialList(list), item)).append("} ");
+                }
+            }
+            LOGGER.info(sb.toString());
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 某个物品在给定行集合里的「总量」合计（诊断用）。 */
+    private static int totalOf(List<MaterialListEntry> rows, net.minecraft.item.Item item) {
+        int sum = 0;
+        if (rows == null) {
+            return 0;
+        }
+        for (MaterialListEntry entry : rows) {
+            if (entry != null && !entry.getStack().isEmpty() && entry.getStack().getItem() == item) {
+                sum += Math.max(0, entry.getCountTotal());
+            }
+        }
+        return sum;
     }
 
     /**
@@ -440,6 +504,9 @@ public class FillMaterialCalculator {
             int reserved = ownTotalDemand(entry.getKey());
             int spare = Math.max(0, have - reserved);
             int need = Math.max(0, entry.getValue() - spare);
+            LOGGER.info("[auto-collect] 二级 {}：聚合需求 {}｜已有 {}｜自用 {}｜富余 {}｜最终 {}",
+                    net.minecraft.registry.Registries.ITEM.getId(entry.getKey()).getPath(),
+                    entry.getValue(), have, reserved, spare, need);
             if (need > 0) {
                 additions.add(new ItemStack(entry.getKey(), need));
             }
