@@ -232,6 +232,49 @@ public class FillMaterialCalculator {
         displayedMaterialRows = list;
     }
 
+    /** 当前视图的行 + 来源说明（收集 / 提取 / 高亮 / 步骤 B 的显示都走这一处）。 */
+    private record ViewRows(List<MaterialListEntry> rows, String path) {
+    }
+
+    /**
+     * 【统一口径 · 视图选择】GUI 显示行优先（含搜索过滤），否则按 {@code listMode} 实时算：
+     * 容器视图＝容器材料行、全部＝原生+容器合并、方块＝只原生。
+     *
+     * <p>⚠️ 2026-11-16 批次 3 起：**收集、提取、高亮都用这一处**，不再各写一套分支。
+     */
+    private static ViewRows currentViewRows(MinecraftClient client, MaterialListBase materialList) {
+        List<MaterialListEntry> displayed = displayedMaterialRows;
+        if (!displayed.isEmpty()) {
+            return new ViewRows(displayed, "displayed");
+        }
+        return liveViewRows(client, materialList);
+    }
+
+    /**
+     * **实时**按当前 {@code listMode} 取行（不信 GUI 抓取快照）。
+     *
+     * <p>提取热键用这个：它在世界里按，材料列表 GUI 可能早关了，`displayedMaterialRows` 是旧快照——
+     * 2026-11-16 实测「面板显示缺 1 个箱子，提取却没算木板」就是快照里还没有那一行。
+     */
+    private static ViewRows liveViewRows(MinecraftClient client, MaterialListBase materialList) {
+        try {
+            if (listMode == 1) {
+                return new ViewRows(getCustomMaterialList(materialList), "容器视图(实时)");
+            }
+            if (listMode == 2) {
+                fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                        materialList.getMaterialsAll(), client.player);
+                return new ViewRows(mergeLists(materialList.getMaterialsMissingOnly(true),
+                        getCustomMaterialList(materialList)), "全部视图(实时)");
+            }
+            fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                    materialList.getMaterialsAll(), client.player);
+            return new ViewRows(materialList.getMaterialsMissingOnly(true), "方块视图(实时)");
+        } catch (Exception e) {
+            return new ViewRows(List.of(), "读取失败");
+        }
+    }
+
     public static MaterialDemandCore.AutoCollectResult getCurrentMissingForAutoCollect() {
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
@@ -239,38 +282,13 @@ public class FillMaterialCalculator {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
         // 优先用「GUI 当前显示的行」（视图+搜索过滤后）——Ray 定稿口径：按显示的材料列表收集
-        List<MaterialListEntry> displayed = displayedMaterialRows;
-        List<ItemStack> fromDisplayed = missingStacksFromRows(displayed);
-        if (!fromDisplayed.isEmpty()) {
-            List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(fromDisplayed, client);
-            logAutoCollectDetail("displayed(" + displayed.size() + "行)", displayed, fromDisplayed, client);
-            return new MaterialDemandCore.AutoCollectResult(fromDisplayed, plan);
-        }
-        List<MaterialListEntry> rows;
-        String path;
-        try {
-            if (listMode == 1) {
-                rows = getCustomMaterialList(materialList);
-                path = "容器视图(实时)";
-            } else if (listMode == 2) {
-                List<MaterialListEntry> vanilla;
-                fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
-                        materialList.getMaterialsAll(), client.player);
-                vanilla = materialList.getMaterialsMissingOnly(true);
-                rows = mergeLists(vanilla, getCustomMaterialList(materialList));
-                path = "全部视图(实时)";
-            } else {
-                fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
-                        materialList.getMaterialsAll(), client.player);
-                rows = materialList.getMaterialsMissingOnly(true);
-                path = "方块视图(实时)";
-            }
-        } catch (Exception e) {
+        ViewRows view = currentViewRows(client, materialList);
+        List<ItemStack> out = missingStacksFromRows(view.rows());
+        if (out.isEmpty()) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
-        List<ItemStack> out = missingStacksFromRows(rows);
         List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(out, client);
-        logAutoCollectDetail(path + "(" + rows.size() + "行)", rows, out, client);
+        logAutoCollectDetail(view.path() + "(" + view.rows().size() + "行)", view.rows(), out, client);
         return new MaterialDemandCore.AutoCollectResult(out, plan);
     }
 
@@ -291,24 +309,7 @@ public class FillMaterialCalculator {
         if (client.player == null || materialList == null) {
             return out;
         }
-        List<MaterialListEntry> rows = displayedMaterialRows;
-        if (rows.isEmpty()) {
-            try {
-                if (listMode == 1) {
-                    rows = getCustomMaterialList(materialList);
-                } else if (listMode == 2) {
-                    fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
-                            materialList.getMaterialsAll(), client.player);
-                    rows = mergeLists(materialList.getMaterialsMissingOnly(true), getCustomMaterialList(materialList));
-                } else {
-                    fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
-                            materialList.getMaterialsAll(), client.player);
-                    rows = materialList.getMaterialsMissingOnly(true);
-                }
-            } catch (Exception e) {
-                return out;
-            }
-        }
+        List<MaterialListEntry> rows = currentViewRows(client, materialList).rows();
         for (MaterialListEntry entry : rows) {
             if (entry == null || entry.getStack().isEmpty()) {
                 continue;
@@ -465,20 +466,13 @@ public class FillMaterialCalculator {
         }
     }
 
+
     /**
-     * 二级材料展开 —— **薄适配器**：真正算法在 {@link MaterialDemandCore#expand}
-     * （批次 3 步骤 A 抽离，行为与历史版本一字不改）。这里只负责：拿客户端配方表 → 构造配方查询 →
-     * 把结果并进清单并打判据日志。
+     * 构造客户端配方查询（第一条能产出该物品的配方；按物品缓存）。
+     *
+     * <p>⚠️ 1.21.1 的 {@code RecipeManager.getAllOfType} 是 private ⇒ 用公开的 {@code values()} 全集再按类型过滤。
      */
-    private static List<MaterialDemandCore.SecondaryPlan> expandCraftingIngredients(List<ItemStack> wanted,
-                                                                                    MinecraftClient client) {
-        // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式）
-        if (!com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()) {
-            return List.of();
-        }
-        if (wanted.isEmpty() || client.player == null || client.player.networkHandler == null) {
-            return List.of();
-        }
+    private static MaterialDemandCore.RecipeSource buildRecipeSource(MinecraftClient client) {
         var recipeManager = client.player.networkHandler.getRecipeManager();
         var registryLookup = client.player.getWorld().getRegistryManager();
         // ⚠️ 1.21.1 的 getAllOfType 是 private ⇒ 用公开的 values() 全集再按类型过滤
@@ -522,6 +516,24 @@ public class FillMaterialCalculator {
             recipeCache.put(item, found);
             return found;
         };
+        return recipeSource;
+    }
+
+    /**
+     * 二级材料展开 —— **薄适配器**：真正算法在 {@link MaterialDemandCore#expand}
+     * （批次 3 步骤 A 抽离，行为与历史版本一字不改）。这里只负责：拿客户端配方表 → 构造配方查询 →
+     * 把结果并进清单并打判据日志。
+     */
+    private static List<MaterialDemandCore.SecondaryPlan> expandCraftingIngredients(List<ItemStack> wanted,
+                                                                                    MinecraftClient client) {
+        // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式）
+        if (!com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()) {
+            return List.of();
+        }
+        if (wanted.isEmpty() || client.player == null || client.player.networkHandler == null) {
+            return List.of();
+        }
+        MaterialDemandCore.RecipeSource recipeSource = buildRecipeSource(client);
         int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
         MaterialDemandCore.Result result = MaterialDemandCore.expand(wanted, recipeSource,
                 item -> countHeldNow(client, item), FillMaterialCalculator::ownTotalDemand, threshold);
@@ -556,64 +568,46 @@ public class FillMaterialCalculator {
      *
      * @return 物品 → 需求数量；清单拿不到（没打开过材料列表）⇒ {@code null}
      */
+
     public static Map<net.minecraft.item.Item, Integer> collectSecondaryNeeds() {
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
         if (client.player == null || client.player.networkHandler == null || materialList == null) {
             return null;
         }
-        List<MaterialListEntry> displayed = displayedMaterialRows;
-        List<MaterialListEntry> rows = displayed.isEmpty()
-                ? materialList.getMaterialsMissingOnly(true)
-                : displayed;
-        int secondaryThreshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
-        Map<net.minecraft.item.Item, Integer> out = new LinkedHashMap<>();
+        // ⭐ 统一口径（批次 3）：视图行与收集/高亮同一处；缺失＝总需求 − 持有；不扣富余（预算在服务端做）
+        ViewRows view = liveViewRows(client, materialList);
+        List<ItemStack> rowsMissing = missingStacksFromRows(view.rows());
+        int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
         try {
-            var recipeManager = client.player.networkHandler.getRecipeManager();
-            var registryLookup = client.player.getWorld().getRegistryManager();
-            List<net.minecraft.recipe.RecipeEntry<net.minecraft.recipe.CraftingRecipe>> crafting = new ArrayList<>();
-            for (var entry : recipeManager.values()) {
-                if (entry.value() instanceof net.minecraft.recipe.CraftingRecipe cr) {
-                    crafting.add(new net.minecraft.recipe.RecipeEntry<>(entry.id(), cr));
-                }
+            MaterialDemandCore.Result result = MaterialDemandCore.expand(rowsMissing, buildRecipeSource(client),
+                    item -> 0, item -> 0, threshold);
+            Map<net.minecraft.item.Item, Integer> out = new LinkedHashMap<>();
+            for (ItemStack stack : result.additions()) {
+                out.merge(stack.getItem(), stack.getCount(), Integer::sum);
             }
-            for (MaterialListEntry row : rows) {
-                if (row == null || row.getStack().isEmpty()) {
+            StringBuilder detail = new StringBuilder();
+            for (MaterialListEntry entry : view.rows()) {
+                if (entry == null || entry.getStack().isEmpty()) {
                     continue;
                 }
-                int missing = Math.max(0, row.getCountTotal() - countHeldNow(client, row.getStack().getItem()));
-                if (missing <= 0 || missing > secondaryThreshold) {
-                    continue;
+                net.minecraft.item.Item item = entry.getStack().getItem();
+                if (detail.length() > 0) {
+                    detail.append(' ');
                 }
-                net.minecraft.item.Item wantItem = row.getStack().getItem();
-                for (var recipeEntry : crafting) {
-                    net.minecraft.item.ItemStack output;
-                    try {
-                        output = recipeEntry.value().getResult(registryLookup);
-                    } catch (Throwable ignored) {
-                        continue;
-                    }
-                    if (output.isEmpty() || output.getItem() != wantItem) {
-                        continue;
-                    }
-                    int outPerCraft = Math.max(1, output.getCount());
-                    int times = (int) Math.ceil((double) missing / outPerCraft);
-                    for (net.minecraft.recipe.Ingredient ingredient : recipeEntry.value().getIngredients()) {
-                        if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
-                            continue;
-                        }
-                        ItemStack[] options = ingredient.getMatchingStacks();
-                        if (options == null || options.length == 0 || options[0].isEmpty()) {
-                            continue;
-                        }
-                        int need = options[0].getCount() * times;
-                        if (need > 0) {
-                            out.merge(options[0].getItem(), need, Integer::sum);
-                        }
-                    }
-                    break;   // 每行只按第一条匹配配方展开（与收集逻辑一致）
-                }
+                detail.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath())
+                        .append("(总").append(entry.getCountTotal())
+                        .append("/持").append(countHeldNow(client, item)).append(')');
             }
+            StringBuilder need = new StringBuilder();
+            out.forEach((item, amount) -> {
+                if (need.length() > 0) {
+                    need.append(", ");
+                }
+                need.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath()).append('×').append(amount);
+            });
+            LOGGER.info("[extract] 二级需求计算：{}｜行：{} ⇒ 需求：{}",
+                    view.path() + "(" + view.rows().size() + "行)", detail, need);
             return out;
         } catch (Throwable t) {
             return null;
