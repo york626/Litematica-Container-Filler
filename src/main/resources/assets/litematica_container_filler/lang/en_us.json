@@ -453,5 +453,11 @@
   "litematica_container_filler.config.name.extractSecondaryEnabled": "Extract secondary materials to container",
   "litematica_container_filler.config.comment.extractSecondaryEnabled": "On: the hotkey moves the ingredients needed for crafting (secondary materials) into the targeted container, budgeted by 'need - already in container'. Off: hotkey only shows a hint.",
   "litematica_container_filler.hotkey.name.extractSecondaryMaterials": "Extract secondary materials to container",
-  "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "Aim at a container and press: moves the ingredients needed for crafting into it (opposite direction of auto-collect). Open the material list (M) once first."
+  "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "Aim at a container and press: moves the ingredients needed for crafting into it (opposite direction of auto-collect). Open the material list (M) once first.",
+  "litematica_container_filler.config.name.materialListGroupSort": "Material List: Group Same Material",
+  "litematica_container_filler.config.comment.materialListGroupSort": "The list sorts by count by default, so blocks/slabs/stairs of the same material get scattered among hundreds of rows. On: sort by material group first (smooth quartz block/slab/stairs together), keeping the original count order inside a group. Applies to the material list GUI and the HUD.",
+  "litematica_container_filler.config.name.materialListHudTweak": "Material List HUD On Top",
+  "litematica_container_filler.config.comment.materialListHudTweak": "Litematica's material list HUD is drawn early and can be covered by the block info overlay and Inventory HUD+ status icons. On: defer it until the whole HUD (including status icons) is drawn and the depth buffer is cleared, so it renders on top. Draw order only; the vanilla background is kept.",
+  "litematica_container_filler.config.name.materialListIgnorePlacementEnabled": "Material List: Ignore 'Placement Enabled'",
+  "litematica_container_filler.config.comment.materialListIgnorePlacementEnabled": "Litematica only counts sub-regions whose placement is enabled, so the material list is empty when placement is off. On: count normally regardless of the placement state (boxes use ANY and block states are read from the schematic data), with identical numbers. Only affects the material list; rendering and printing are untouched."
 }

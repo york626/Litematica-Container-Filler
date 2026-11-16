@@ -455,5 +455,11 @@
   "litematica_container_filler.config.name.extractSecondaryEnabled": "提取二级材料到当前容器",
   "litematica_container_filler.config.comment.extractSecondaryEnabled": "打开：热键会把材料清单里「需要先合成的那部分原料」按需塞进准星容器（服务端直连、盒装自动拆取）；关：热键只提示不动作。",
   "litematica_container_filler.hotkey.name.extractSecondaryMaterials": "提取二级材料到当前容器",
-  "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "准星对着容器按一下：把清单里需要合成的原料（例：4 个台阶 ← 3 个平滑石英块）按「需求 − 容器已有」搬进去，方向与自动收集相反。先打开一次材料列表（M）才有清单。"
+  "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "准星对着容器按一下：把清单里需要合成的原料（例：4 个台阶 ← 3 个平滑石英块）按「需求 − 容器已有」搬进去，方向与自动收集相反。先打开一次材料列表（M）才有清单。",
+  "litematica_container_filler.config.name.materialListGroupSort": "材料列表按同类分组排序",
+  "litematica_container_filler.config.comment.materialListGroupSort": "材料列表默认按数量排，同一材料的方块 / 台阶 / 楼梯会被几百条材料冲散。开启后先按「同一种材料」分组（平滑石英块 / 平滑石英台阶 / 平滑石英楼梯排在一起），组内仍按原来的数量顺序。对材料列表界面和 HUD 同时生效。",
+  "litematica_container_filler.config.name.materialListHudTweak": "材料列表 HUD 置顶",
+  "litematica_container_filler.config.comment.materialListHudTweak": "Litematica 的材料清单 HUD 画得较早，会被方块信息框、Inventory HUD+ 的状态图标压住。开启后把它延迟到整帧 HUD（含状态图标）画完、清完深度之后再画 ⇒ 显示在最上面。只改绘制顺序，不改任何数据（原版黑底保持）。",
+  "litematica_container_filler.config.name.materialListIgnorePlacementEnabled": "材料列表忽略「放置启用」",
+  "litematica_container_filler.config.comment.materialListIgnorePlacementEnabled": "Litematica 统计材料时只算「放置启用」的子区域，放置一关材料清单就是空的。开启后不管放置是否启用都照常统计（取区块改 ANY + 直接读投影原始数据），数字与启用时一致。只影响材料列表，不碰渲染 / 打印等其它行为。"
 }

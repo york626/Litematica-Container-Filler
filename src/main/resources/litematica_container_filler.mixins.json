@@ -28,7 +28,13 @@
     "CrafterBlockEntityMixin",
     "SchematicPlacementMixin",
     "SchematicPlacementManagerMixin",
-    "MaterialListPlacementAccessor"
+    "MaterialListPlacementAccessor",
+    "MixinMaterialListSorterGrouping",
+    "MixinRenderHandlerHudOrder",
+    "MixinGameRendererHudTail",
+    "MixinTaskCountBlocksPlacementIgnoreEnabled",
+    "MixinTaskCountBlocksPlacementOfflineSampler",
+    "MixinTaskCountBlocksBaseStopLog"
   ],
   "injectors": {
     "defaultRequire": 1

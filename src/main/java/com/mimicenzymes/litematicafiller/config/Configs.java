@@ -126,6 +126,14 @@ public class Configs implements IConfigHandler {
     /** 「填充容器」物品列表模式用的物品 ID 列表（按顺序优先）。 */
     public static final ConfigStringList BATCH_FILL_ITEM_LIST        = new ConfigStringList("litematica_container_filler.config.name.batchFillItemList", ImmutableList.of("minecraft:cobblestone"), "litematica_container_filler.config.comment.batchFillItemList");
 
+    //材料列表显示/统计（2026-11-16 从 Ray 工具箱迁入，放「自动物流」页）
+    /** 材料列表按「同一材料的各种形状」分组排序（方块/台阶/楼梯排在一起）。 */
+    public static final ConfigBoolean MATERIAL_LIST_GROUP_SORT       = new ConfigBoolean("litematica_container_filler.config.name.materialListGroupSort", true, "litematica_container_filler.config.comment.materialListGroupSort");
+    /** 材料列表 HUD 置顶：把 InfoHud（材料清单）延迟到整帧 HUD 之后绘制。 */
+    public static final ConfigBoolean MATERIAL_LIST_HUD_TWEAK        = new ConfigBoolean("litematica_container_filler.config.name.materialListHudTweak", true, "litematica_container_filler.config.comment.materialListHudTweak");
+    /** 材料列表忽略「放置启用」：放置关掉时照样统计材料（三层：取区块 + 从投影原始数据读 + 诊断日志）。 */
+    public static final ConfigBoolean MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialListIgnorePlacementEnabled", true, "litematica_container_filler.config.comment.materialListIgnorePlacementEnabled");
+
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
     public static final ConfigBooleanHotkeyed HIGHLIGHT_XRAY        = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightXray", false, "", "litematica_container_filler.config.comment.highlightXray");
@@ -212,7 +220,11 @@ public class Configs implements IConfigHandler {
                 STORE_ORDERLY,
                 DROP_EXTRACTED_ITEMS,
                 DROP_ITEMS_FROM_EMPTY_SCHEMATIC_CONTAINERS,
-                HIDE_PROJECTION_FILL_GUI
+                HIDE_PROJECTION_FILL_GUI,
+                // 材料列表显示/统计（2026-11-16 从工具箱迁入）：Ray 定「新的往后放」
+                MATERIAL_LIST_GROUP_SORT,
+                MATERIAL_LIST_HUD_TWEAK,
+                MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED
         );
 
         TOOL_OPTIONS = ImmutableList.of(
