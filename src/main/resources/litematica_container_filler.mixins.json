@@ -34,7 +34,8 @@
     "MixinGameRendererHudTail",
     "MixinTaskCountBlocksPlacementIgnoreEnabled",
     "MixinTaskCountBlocksPlacementOfflineSampler",
-    "MixinTaskCountBlocksBaseStopLog"
+    "MixinTaskCountBlocksBaseStopLog",
+    "MixinHandledScreenMaterialHighlight"
   ],
   "injectors": {
     "defaultRequire": 1

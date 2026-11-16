@@ -275,6 +275,54 @@ public class FillMaterialCalculator {
     }
 
     /**
+     * 【高亮材料列表物品】当前视图「还缺的」物品及数量（Ray 2026-11-16：「根据材料列表的视图高亮，
+     * 3 个视图不要串」；批次 2 从工具箱迁入）。
+     *
+     * <p>口径与材料列表显示一致：**缺失 = 该行总量 − 身上现有**（含盒内一层，同 {@link #countHeldNow}）；
+     * **不展开二级原料**（列表里没有的行不高亮——要一并备料用自动收集）。
+     *
+     * <p>视图选择与 {@link #getCurrentMissingForAutoCollect()} 完全相同：
+     * GUI 显示行优先（含搜索过滤），没抓到就按 {@code listMode} 实时算（容器 / 全部 / 方块）。
+     */
+    public static Map<net.minecraft.item.Item, Long> getCurrentViewMissingForHighlight() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        MaterialListBase materialList = DataManager.getMaterialList();
+        Map<net.minecraft.item.Item, Long> out = new LinkedHashMap<>();
+        if (client.player == null || materialList == null) {
+            return out;
+        }
+        List<MaterialListEntry> rows = displayedMaterialRows;
+        if (rows.isEmpty()) {
+            try {
+                if (listMode == 1) {
+                    rows = getCustomMaterialList(materialList);
+                } else if (listMode == 2) {
+                    fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                            materialList.getMaterialsAll(), client.player);
+                    rows = mergeLists(materialList.getMaterialsMissingOnly(true), getCustomMaterialList(materialList));
+                } else {
+                    fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                            materialList.getMaterialsAll(), client.player);
+                    rows = materialList.getMaterialsMissingOnly(true);
+                }
+            } catch (Exception e) {
+                return out;
+            }
+        }
+        for (MaterialListEntry entry : rows) {
+            if (entry == null || entry.getStack().isEmpty()) {
+                continue;
+            }
+            net.minecraft.item.Item item = entry.getStack().getItem();
+            int missing = Math.max(0, entry.getCountTotal()) - countHeldNow(client, item);
+            if (missing > 0) {
+                out.merge(item, (long) missing, Long::sum);
+            }
+        }
+        return out;
+    }
+
+    /**
      * 【判据日志】收集时把「用了哪些源行、每行总量/显示缺口/身上实有、最后发送什么」打一行。
      *
      * <p>Ray 2026-11-16：「缺 10 个（主行 1 + 二级 9），一次只收 9」——两边口径对不上时，

@@ -133,6 +133,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean MATERIAL_LIST_HUD_TWEAK        = new ConfigBoolean("litematica_container_filler.config.name.materialListHudTweak", true, "litematica_container_filler.config.comment.materialListHudTweak");
     /** 材料列表忽略「放置启用」：放置关掉时照样统计材料（三层：取区块 + 从投影原始数据读 + 诊断日志）。 */
     public static final ConfigBoolean MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialListIgnorePlacementEnabled", true, "litematica_container_filler.config.comment.materialListIgnorePlacementEnabled");
+    /** 高亮材料列表物品：打开容器时按**当前视图**的缺料高亮槽位（约 3 秒渐隐）。 */
+    public static final ConfigBoolean MATERIAL_HIGHLIGHT                        = new ConfigBoolean("litematica_container_filler.config.name.materialHighlight", true, "litematica_container_filler.config.comment.materialHighlight");
 
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
@@ -224,7 +226,8 @@ public class Configs implements IConfigHandler {
                 // 材料列表显示/统计（2026-11-16 从工具箱迁入）：Ray 定「新的往后放」
                 MATERIAL_LIST_GROUP_SORT,
                 MATERIAL_LIST_HUD_TWEAK,
-                MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED
+                MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED,
+                MATERIAL_HIGHLIGHT
         );
 
         TOOL_OPTIONS = ImmutableList.of(
