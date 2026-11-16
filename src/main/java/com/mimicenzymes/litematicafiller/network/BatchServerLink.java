@@ -648,14 +648,14 @@ public final class BatchServerLink {
         int collectedItems = 0;
         boolean backpackFull = false;
         backpackFullFlag = false;
-        // 【v1.16.29-Ray 修】**三遍扫描：先整盒 → 再开盒 → 最后散装**。
+        // 【v1.16.29 + v1.19.5-Ray】**三遍扫描：先整盒 → 再散装 → 最后开盒**。
         // ⛔ 旧写法单遍按槽位顺序走：散装排在盒子前面时先把需要量吃掉，
         //   轮到盒子变成「剩余 1727 < 盒内 1728」⇒ 不整搬、改成开盒取 1727 个散货。
         //   Ray 2026-11-16 实测：仓库箱子 11 散 + 1 盒(1728)，需要 1738
         //   ⇒ 期望「整盒 1728 + 散货 10」，实际拿到 1737 个散货。根因就是顺序。
         // 先整盒（盒内容越多越优先，避免小盒先被开掉、把大盒的整搬机会吃掉）：
         //   ① 需要量 ≥ 盒内该材料总量（且盒里全是缺料）⇒ **整盒搬进背包**；
-        //   ② 需要量 < 盒内量 ⇒ 留到第二遍**原地开盒按需取**（盒子留容器原位）。
+        //   ② 需要量 < 盒内量 ⇒ **先用散装补**（Ray 2026-11-16：有散货先拿散货），散装不够才开盒。
         List<Integer> boxSlots = new ArrayList<>();
         for (int i = 0; i < inv.size(); i++) {
             ItemStack stack = inv.getStack(i);
@@ -680,23 +680,9 @@ public final class BatchServerLink {
                 collectedItems += takenWhole;
             }
         }
-        // 第二遍：没整搬的盒子 ⇒ 原地开盒按需取
-        for (int i : boxSlots) {
-            if (backpackFull) {
-                break;
-            }
-            ItemStack stack = inv.getStack(i);
-            if (stack == null || stack.isEmpty() || !mimic(stack, wantedCount)) {
-                continue;
-            }
-            int takenFromBox = mimic(stack, wantedCount, player);
-            if (takenFromBox > 0) {
-                inv.markDirty();
-                collectedSlots++;
-                collectedItems += takenFromBox;
-            }
-        }
-        // 第三遍：散装 —— 是清单缺料 ⇒ 按缺量拿
+        // 第二遍：**散装优先**（Ray 2026-11-16：「箱子里有 11 个散货他不拿，先从盒子里拿」）——
+        //   整盒搬不划算（盒内容 > 需要量）时，先用散装把需求吃掉；散装不够才开盒。
+        int beforeLoose = collectedItems;
         for (int i = 0; i < inv.size() && !backpackFull; i++) {
             ItemStack stack = inv.getStack(i);
             if (stack == null || stack.isEmpty()) {
@@ -723,6 +709,28 @@ public final class BatchServerLink {
             } else {
                 backpackFull = true;
             }
+        }
+        int looseTaken = collectedItems - beforeLoose;
+        // 第三遍：散装也不够 ⇒ 原地开盒按需取（盒子留容器原位）
+        int beforeOpen = collectedItems;
+        for (int i : boxSlots) {
+            if (backpackFull) {
+                break;
+            }
+            ItemStack stack = inv.getStack(i);
+            if (stack == null || stack.isEmpty() || !mimic(stack, wantedCount)) {
+                continue;
+            }
+            int takenFromBox = mimic(stack, wantedCount, player);
+            if (takenFromBox > 0) {
+                inv.markDirty();
+                collectedSlots++;
+                collectedItems += takenFromBox;
+            }
+        }
+        if (looseTaken > 0 || collectedItems - beforeOpen > 0) {
+            LOGGER.info("[auto-collect] 收集顺序：整盒后剩余需求 → 散装 {} 个 → 开盒 {} 个",
+                    looseTaken, collectedItems - beforeOpen);
         }
         inv.markDirty();
         player.getInventory().markDirty();
