@@ -35,7 +35,8 @@ public abstract class MixinTaskCountBlocksBaseStopLog {
                 size = base.getMaterialsAll().size();
             }
             MaterialListDiagnostics.logTaskStop(this.getClass().getSimpleName(), this.materialList != null, size,
-                    MaterialListOfflineSampler.sampleCalls(), MaterialListOfflineSampler.sampleHits());
+                    MaterialListOfflineSampler.sampleCalls(), MaterialListOfflineSampler.sampleHits(),
+                    MaterialListOfflineSampler.sampleNonAir());
         } catch (Throwable ignored) {
             // 只是日志
         }

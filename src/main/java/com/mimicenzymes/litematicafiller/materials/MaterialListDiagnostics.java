@@ -45,12 +45,12 @@ public final class MaterialListDiagnostics {
     }
 
     /**
-     * v1.18.3 诊断：任务收尾时打「任务类型 / 清单条数 / 本次采样次数」——
-     * 用来区分「任务没跑」「跑了但采样全空」「跑了但结果被别处清掉」。
+     * v1.18.3/4 诊断：任务收尾时打「任务类型 / 清单条数 / 离线采样命中（含非空气）」——
+     * 用来区分「任务没跑」「跑了但采样全空」「统计有数但列表被写空」。
      */
     public static void logTaskStop(String taskName, boolean materialListPresent, int listSize,
-                                   long sampleCalls, long sampleHits) {
-        LOGGER.info("[material-list] 材料统计任务结束：{}｜清单已就绪={}｜清单 {} 条｜采样 {}/{} 次命中",
-                taskName, materialListPresent, listSize, sampleHits, sampleCalls);
+                                   long sampleCalls, long sampleHits, long sampleNonAir) {
+        LOGGER.info("[material-list] 材料统计任务结束：{}｜清单已就绪={}｜清单 {} 条｜采样 {}/{} 次（非空气 {}）",
+                taskName, materialListPresent, listSize, sampleHits, sampleCalls, sampleNonAir);
     }
 }

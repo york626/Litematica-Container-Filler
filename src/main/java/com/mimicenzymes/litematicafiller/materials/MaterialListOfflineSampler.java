@@ -60,6 +60,9 @@ public final class MaterialListOfflineSampler {
             new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.concurrent.atomic.AtomicLong SAMPLE_HITS =
             new java.util.concurrent.atomic.AtomicLong();
+    /** v1.18.4 诊断：非空气命中数（判断容器数据是不是全空）。 */
+    private static final java.util.concurrent.atomic.AtomicLong SAMPLE_NON_AIR =
+            new java.util.concurrent.atomic.AtomicLong();
 
     private MaterialListOfflineSampler() {
     }
@@ -70,6 +73,10 @@ public final class MaterialListOfflineSampler {
 
     public static long sampleHits() {
         return SAMPLE_HITS.get();
+    }
+
+    public static long sampleNonAir() {
+        return SAMPLE_NON_AIR.get();
     }
 
     /**
@@ -94,6 +101,9 @@ public final class MaterialListOfflineSampler {
                         pos.getZ() - region.minZ);
                 if (state != null) {
                     SAMPLE_HITS.incrementAndGet();
+                    if (!state.isAir()) {
+                        SAMPLE_NON_AIR.incrementAndGet();
+                    }
                 }
                 if (state != null && LOGGED.compareAndSet(false, true)) {
                     LOGGER.info("[material-list] 材料统计：放置未启用 ⇒ 改为直接读投影数据（{} 个区域可用）",
