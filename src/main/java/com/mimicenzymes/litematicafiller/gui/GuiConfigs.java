@@ -104,6 +104,7 @@ public class GuiConfigs extends GuiConfigsBase {
                 // 让「自动收集」和「提取二级材料」两组各自连在一起，好区分。
                 list.add(new ConfigOptionWrapper(Hotkeys.AUTO_COLLECT_TRIGGER));
                 list.add(new ConfigOptionWrapper(Configs.EXTRACT_SECONDARY_ENABLED));
+                list.add(new ConfigOptionWrapper(Configs.EXTRACT_SECONDARY_ROW_LIMIT));
                 list.add(new ConfigOptionWrapper(Hotkeys.EXTRACT_SECONDARY_MATERIALS));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_TRIGGER));
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_CANCEL));

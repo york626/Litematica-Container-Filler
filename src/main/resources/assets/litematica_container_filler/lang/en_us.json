@@ -452,6 +452,8 @@
   "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "On (default): also collect crafting ingredients of the missing rows (limited by the secondary threshold). Off: strict mode — collect exactly what the list shows, no ingredients (good for inventory transfer).",
   "litematica_container_filler.config.name.extractSecondaryEnabled": "Extract secondary materials to container",
   "litematica_container_filler.config.comment.extractSecondaryEnabled": "On: the hotkey moves the ingredients needed for crafting (secondary materials) into the targeted container, budgeted by 'need - already in container'. Off: hotkey only shows a hint.",
+  "litematica_container_filler.config.name.extractSecondaryRowLimit": "Extract secondary: only first N rows",
+  "litematica_container_filler.config.comment.extractSecondaryRowLimit": "Follows the material list's display order and extracts the secondary materials of only the first N rows (default 5). After you finish those rows, press the hotkey again and it advances further — so the container never gets flooded with everything at once. Rows without secondary materials (e.g. blocks placed directly) do not count toward N.",
   "litematica_container_filler.hotkey.name.extractSecondaryMaterials": "Extract secondary materials to container",
   "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "Aim at a container and press: moves the ingredients needed for crafting into it (opposite direction of auto-collect). Open the material list (M) once first.",
   "litematica_container_filler.config.name.materialListGroupSort": "Material List: Group Same Material",

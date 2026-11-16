@@ -577,27 +577,46 @@ public class FillMaterialCalculator {
         }
         // ⭐ 统一口径（批次 3）：视图行与收集/高亮同一处；缺失＝总需求 − 持有；不扣富余（预算在服务端做）
         ViewRows view = liveViewRows(client, materialList);
-        List<ItemStack> rowsMissing = missingStacksFromRows(view.rows());
-        int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+        // ⭐ v1.20.3-Ray（Ray 2026-11-16）：「按材料列表**显示顺序**，每轮只取前 N 行」——
+        //   一次全搬进容器处理不过来。列表显示顺序＝GUI/HUD 用的同一个 MaterialListSorter。
+        List<MaterialListEntry> ordered = new ArrayList<>(view.rows());
         try {
-            MaterialDemandCore.Result result = MaterialDemandCore.expand(rowsMissing, buildRecipeSource(client),
+            ordered.sort(new fi.dy.masa.litematica.materials.MaterialListSorter(materialList));
+        } catch (Throwable ignored) {
+            // 排序失败就按原顺序（宁可顺序差点，也别不提）
+        }
+        List<ItemStack> rowsMissing = missingStacksFromRows(ordered);
+        int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+        int rowLimit = Math.max(1, com.mimicenzymes.litematicafiller.config.Configs.EXTRACT_SECONDARY_ROW_LIMIT.getIntegerValue());
+        try {
+            MaterialDemandCore.RecipeSource recipeSource = buildRecipeSource(client);
+            // 只收前 N 个**有二级材料**的行（直接放置的行没有配方，不占名额）
+            List<ItemStack> limited = new ArrayList<>();
+            int taken = 0;
+            for (ItemStack stack : rowsMissing) {
+                if (taken >= rowLimit) {
+                    break;
+                }
+                MaterialDemandCore.Recipe recipe = recipeSource.find(stack.getItem());
+                if (recipe == null || recipe.ingredients().isEmpty()) {
+                    continue;
+                }
+                limited.add(stack);
+                taken++;
+            }
+            MaterialDemandCore.Result result = MaterialDemandCore.expand(limited, recipeSource,
                     item -> 0, item -> 0, threshold);
             Map<net.minecraft.item.Item, Integer> out = new LinkedHashMap<>();
             for (ItemStack stack : result.additions()) {
                 out.merge(stack.getItem(), stack.getCount(), Integer::sum);
             }
             StringBuilder detail = new StringBuilder();
-            for (MaterialListEntry entry : view.rows()) {
-                if (entry == null || entry.getStack().isEmpty()) {
-                    continue;
-                }
-                net.minecraft.item.Item item = entry.getStack().getItem();
+            for (ItemStack stack : limited) {
                 if (detail.length() > 0) {
                     detail.append(' ');
                 }
-                detail.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath())
-                        .append("(总").append(entry.getCountTotal())
-                        .append("/持").append(countHeldNow(client, item)).append(')');
+                detail.append(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).getPath())
+                        .append("×").append(stack.getCount());
             }
             StringBuilder need = new StringBuilder();
             out.forEach((item, amount) -> {
@@ -606,8 +625,8 @@ public class FillMaterialCalculator {
                 }
                 need.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath()).append('×').append(amount);
             });
-            LOGGER.info("[extract] 二级需求计算：{}｜行：{} ⇒ 需求：{}",
-                    view.path() + "(" + view.rows().size() + "行)", detail, need);
+            LOGGER.info("[extract] 二级需求计算：{}｜取前 {} 行（有缺口 {} 行）｜行：{} ⇒ 需求：{}",
+                    view.path() + "(" + view.rows().size() + "行)", rowLimit, rowsMissing.size(), detail, need);
             return out;
         } catch (Throwable t) {
             return null;

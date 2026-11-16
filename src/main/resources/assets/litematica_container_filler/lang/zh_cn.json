@@ -454,6 +454,8 @@
   "litematica_container_filler.config.comment.autoCollectSecondaryEnabled": "开（默认）：收集清单缺料时把它们的合成原料也一并收齐（受「二级展开阈值」限制）——备货一次到位。关：纯严格模式，显示多少收多少，不带原料（适合清点/转运）。",
   "litematica_container_filler.config.name.extractSecondaryEnabled": "提取二级材料到当前容器",
   "litematica_container_filler.config.comment.extractSecondaryEnabled": "打开：热键会把材料清单里「需要先合成的那部分原料」按需塞进准星容器（服务端直连、盒装自动拆取）；关：热键只提示不动作。",
+  "litematica_container_filler.config.name.extractSecondaryRowLimit": "提取二级材料：每轮只取前几行",
+  "litematica_container_filler.config.comment.extractSecondaryRowLimit": "按材料列表的**显示顺序**，只提取前 N 行需要的二级材料（默认 5）。处理完前面几行后再按一次热键，会自动往后推进；避免一次性全搬进容器、处理不过来造成混乱。没有二级材料的行（如直接放置的方块）不占名额。",
   "litematica_container_filler.hotkey.name.extractSecondaryMaterials": "提取二级材料到当前容器",
   "litematica_container_filler.hotkey.comment.extractSecondaryMaterials": "准星对着容器按一下：把清单里需要合成的原料（例：4 个台阶 ← 3 个平滑石英块）按「需求 − 容器已有」搬进去，方向与自动收集相反。先打开一次材料列表（M）才有清单。",
   "litematica_container_filler.config.name.materialListGroupSort": "材料列表按同类分组排序",
