@@ -385,6 +385,13 @@ public class FillMaterialCalculator {
         }
         List<ItemStack> additions = new ArrayList<>();
         int secondaryThreshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+        // ★ v1.16.26-Ray（Ray 2026-11-16：「还缺 1 个平滑石英块，自动收集没提取过来」）：
+        //   **先把所有行的原料按物品聚合，再统一扣一次「已有富余」**。
+        //   旧写法在 `for (Ingredient …)` 里逐槽扣 spare ⇒ 一条 6 格配方被扣 6 次 spare：
+        //   实测台阶+楼梯共需 9 个平滑石英块、身上 1737、直接放置占 1729 ⇒ 富余 8，
+        //   本该收 9−8=1；逐槽扣（每槽需 1、减 8）⇒ 9 个槽全变 0 ⇒ 一个都不收。
+        //   聚合后「同一物品跨行」（台阶/楼梯各扣一次 spare）也只扣一次。
+        Map<net.minecraft.item.Item, Integer> totalNeeds = new LinkedHashMap<>();
         for (SourceRow source : sources) {
             int wantMissing = source.missing();
             // 【二级展开阈值】（Ray 2026-11-14：漏斗缺 1198 的铁锭原料 6000 个塞爆背包）：
@@ -416,25 +423,25 @@ public class FillMaterialCalculator {
                         continue;
                     }
                     int need = options[0].getCount() * times;
-                    if (need <= 0) {
-                        continue;
-                    }
-                    // ⚠️ 与一级行**叠加**是 Ray 2026-11-14 定稿（v1.16.8 撤销 v1.16.7 的去重）：
-                    // 「海晶灯之类需要二级材料正好一起拿过来，减少工作量少拿一次」——
-                    // 一级行缺 4 + 别的行配方还需 5 = 拿 9，海晶灯和砂粒一次备齐。
-                    // ⛔ v1.16.21-Ray（Ray 2026-11-15：「还差 9 个二级材料，自动收集不收集」）：
-                    //   旧写法直接拿「身上这个物品的总数」去减 ⇒ 身上 1729 个平滑石英块
-                    //   （**全被直接放置占用**）把 3/6 的合成需求减成 0 ⇒ 收集清单里没有那 9 个。
-                    //   正确：只有**富余**出来的量能算作已有 = 身上 − 该物品自己的总需求（1729）。
-                    int have = countHeldNow(client, options[0].getItem());
-                    int reserved = ownTotalDemand(options[0].getItem());
-                    int spare = Math.max(0, have - reserved);
-                    need = Math.max(0, need - spare);
                     if (need > 0) {
-                        additions.add(new ItemStack(options[0].getItem(), need));
+                        totalNeeds.merge(options[0].getItem(), need, Integer::sum);
                     }
                 }
                 break; // 每行只按第一条匹配配方展开
+            }
+        }
+        // 统一扣「已有富余」，**每个物品只扣一次**：
+        //   ⚠️ 与一级行**叠加**是 Ray 2026-11-14 定稿（v1.16.8 撤销 v1.16.7 的去重）：
+        //   「海晶灯之类需要二级材料正好一起拿过来，减少工作量少拿一次」。
+        //   ⛔ v1.16.21-Ray（Ray 2026-11-15）：只有**富余**能算已有 = 身上 − 该物品自己的总需求（1729），
+        //   否则身上 1729 个（全被直接放置占用）会把 3/6 的合成需求减成 0。
+        for (Map.Entry<net.minecraft.item.Item, Integer> entry : totalNeeds.entrySet()) {
+            int have = countHeldNow(client, entry.getKey());
+            int reserved = ownTotalDemand(entry.getKey());
+            int spare = Math.max(0, have - reserved);
+            int need = Math.max(0, entry.getValue() - spare);
+            if (need > 0) {
+                additions.add(new ItemStack(entry.getKey(), need));
             }
         }
         // 追加进清单（同物品合并）
