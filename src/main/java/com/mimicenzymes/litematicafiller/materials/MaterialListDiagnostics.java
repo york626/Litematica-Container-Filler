@@ -49,8 +49,15 @@ public final class MaterialListDiagnostics {
      * 用来区分「任务没跑」「跑了但采样全空」「统计有数但列表被写空」。
      */
     public static void logTaskStop(String taskName, boolean materialListPresent, int listSize,
+                                   int stateCount, long countedBlocks,
                                    long sampleCalls, long sampleHits, long sampleNonAir) {
-        LOGGER.info("[material-list] 材料统计任务结束：{}｜清单已就绪={}｜清单 {} 条｜采样 {}/{} 次（非空气 {}）",
-                taskName, materialListPresent, listSize, sampleHits, sampleCalls, sampleNonAir);
+        LOGGER.info("[material-list] 材料统计任务结束：{}｜清单已就绪={}｜清单 {} 条｜统计 {} 种/{} 块｜采样 {}/{} 次（非空气 {}）",
+                taskName, materialListPresent, listSize, stateCount, countedBlocks,
+                sampleHits, sampleCalls, sampleNonAir);
+    }
+
+    /** v1.18.6：任务写空但统计有数时，自愈重建的结果条数。 */
+    public static void logSelfRepair(int rebuiltSize) {
+        LOGGER.info("[material-list] 任务写空但统计有数 ⇒ 自愈重建 {} 条", rebuiltSize);
     }
 }
