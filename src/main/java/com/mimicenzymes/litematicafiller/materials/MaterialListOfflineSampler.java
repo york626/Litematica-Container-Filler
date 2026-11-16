@@ -55,7 +55,21 @@ public final class MaterialListOfflineSampler {
     /** 「离线采样真的用上了」日志只打一次（Mixin 里不能放静态初始化字段，挪到这里）。 */
     private static final AtomicBoolean LOGGED = new AtomicBoolean();
 
+    /** v1.18.3 诊断：采样调用 / 命中次数（任务收尾时打印，用于区分「没跑」和「跑了但全空」）。 */
+    private static final java.util.concurrent.atomic.AtomicLong SAMPLE_CALLS =
+            new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong SAMPLE_HITS =
+            new java.util.concurrent.atomic.AtomicLong();
+
     private MaterialListOfflineSampler() {
+    }
+
+    public static long sampleCalls() {
+        return SAMPLE_CALLS.get();
+    }
+
+    public static long sampleHits() {
+        return SAMPLE_HITS.get();
     }
 
     /**
@@ -67,6 +81,7 @@ public final class MaterialListOfflineSampler {
         if (placement == null || pos == null) {
             return null;
         }
+        SAMPLE_CALLS.incrementAndGet();
         List<Region> regions = regionsFor(placement);
         for (Region region : regions) {
             if (!region.contains(pos)) {
@@ -77,6 +92,9 @@ public final class MaterialListOfflineSampler {
                         pos.getX() - region.minX,
                         pos.getY() - region.minY,
                         pos.getZ() - region.minZ);
+                if (state != null) {
+                    SAMPLE_HITS.incrementAndGet();
+                }
                 if (state != null && LOGGED.compareAndSet(false, true)) {
                     LOGGER.info("[material-list] 材料统计：放置未启用 ⇒ 改为直接读投影数据（{} 个区域可用）",
                             regions.size());

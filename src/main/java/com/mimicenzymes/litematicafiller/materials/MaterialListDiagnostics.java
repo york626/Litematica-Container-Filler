@@ -38,8 +38,19 @@ public final class MaterialListDiagnostics {
         }
     }
 
-    /** 统计任务收尾（只确认它跑过；具体条数看材料清单本身）。 */
-    public static void logTaskStop(boolean materialListPresent) {
-        LOGGER.info("[material-list] 材料统计任务结束：清单已就绪={}", materialListPresent);
+    /** v1.18.3 诊断：每次构造统计任务都打一行（区块盒子数 = 任务到底有没有活儿干）。 */
+    public static void logTaskBoxes(String required, int boxes, boolean configOn) {
+        LOGGER.info("[material-list] 统计任务取区块：{} → {}，盒子 {} 个",
+                required, configOn ? "ANY" : required, boxes);
+    }
+
+    /**
+     * v1.18.3 诊断：任务收尾时打「任务类型 / 清单条数 / 本次采样次数」——
+     * 用来区分「任务没跑」「跑了但采样全空」「跑了但结果被别处清掉」。
+     */
+    public static void logTaskStop(String taskName, boolean materialListPresent, int listSize,
+                                   long sampleCalls, long sampleHits) {
+        LOGGER.info("[material-list] 材料统计任务结束：{}｜清单已就绪={}｜清单 {} 条｜采样 {}/{} 次命中",
+                taskName, materialListPresent, listSize, sampleHits, sampleCalls);
     }
 }

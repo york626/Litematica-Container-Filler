@@ -78,10 +78,15 @@ public class MixinTaskCountBlocksPlacementIgnoreEnabled {
     )
     private ImmutableMap<String, Box> lcf$boxes(SchematicPlacement self,
                                                 SubRegionPlacement.RequiredEnabled required) {
-        if (Configs.MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED.getBooleanValue()) {
+        boolean on = Configs.MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED.getBooleanValue();
+        ImmutableMap<String, Box> boxes = on
+                ? self.getSubRegionBoxes(SubRegionPlacement.RequiredEnabled.ANY)
+                : self.getSubRegionBoxes(required);
+        if (on) {
             MaterialListDiagnostics.logIgnorePlacementOnce();
-            return self.getSubRegionBoxes(SubRegionPlacement.RequiredEnabled.ANY);
         }
-        return self.getSubRegionBoxes(required);
+        // v1.18.3 诊断：每次任务构造都记「取到几个盒子」——任务没活儿干时这里会是 0
+        MaterialListDiagnostics.logTaskBoxes(required.name(), boxes.size(), on);
+        return boxes;
     }
 }

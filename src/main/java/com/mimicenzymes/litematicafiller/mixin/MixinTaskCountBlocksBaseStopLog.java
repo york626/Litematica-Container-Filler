@@ -1,6 +1,7 @@
 package com.mimicenzymes.litematicafiller.mixin;
 
 import com.mimicenzymes.litematicafiller.materials.MaterialListDiagnostics;
+import com.mimicenzymes.litematicafiller.materials.MaterialListOfflineSampler;
 import fi.dy.masa.litematica.scheduler.tasks.TaskCountBlocksBase;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -29,7 +30,12 @@ public abstract class MixinTaskCountBlocksBaseStopLog {
     @Inject(method = "onStop", at = @At("RETURN"), remap = false, require = 0)
     private void lcf$logStop(CallbackInfo ci) {
         try {
-            MaterialListDiagnostics.logTaskStop(this.materialList != null);
+            int size = -1;
+            if (this.materialList instanceof fi.dy.masa.litematica.materials.MaterialListBase base) {
+                size = base.getMaterialsAll().size();
+            }
+            MaterialListDiagnostics.logTaskStop(this.getClass().getSimpleName(), this.materialList != null, size,
+                    MaterialListOfflineSampler.sampleCalls(), MaterialListOfflineSampler.sampleHits());
         } catch (Throwable ignored) {
             // 只是日志
         }
