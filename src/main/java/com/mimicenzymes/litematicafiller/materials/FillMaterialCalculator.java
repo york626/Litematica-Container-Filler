@@ -232,32 +232,19 @@ public class FillMaterialCalculator {
         displayedMaterialRows = list;
     }
 
-    /**
-     * 【自动收集】结果：要收的清单 ＋ 二级计划。
-     *
-     * <p>⭐ v1.19.1-Ray（Ray 2026-11-16：「材料列表缺 2 个箱子，自动收集把 16 个橡木木板也收来了——
-     * 有成品就不用收原料了」）：服务端拿 {@code plan} 判断「容器里成品够整行需求 ⇒ 这行的原料不必收」。
-     */
-    public record AutoCollectResult(List<ItemStack> items, List<SecondaryPlan> plan) {
-    }
-
-    /** 【自动收集】一条二级计划：一级成品 + 本行缺量 + 本行展开的原料（原始量，未扣富余）。 */
-    public record SecondaryPlan(net.minecraft.item.Item primary, int need, List<ItemStack> ingredients) {
-    }
-
-    public static AutoCollectResult getCurrentMissingForAutoCollect() {
+    public static MaterialDemandCore.AutoCollectResult getCurrentMissingForAutoCollect() {
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
         if (client.player == null || materialList == null) {
-            return new AutoCollectResult(List.of(), List.of());
+            return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
         // 优先用「GUI 当前显示的行」（视图+搜索过滤后）——Ray 定稿口径：按显示的材料列表收集
         List<MaterialListEntry> displayed = displayedMaterialRows;
         List<ItemStack> fromDisplayed = missingStacksFromRows(displayed);
         if (!fromDisplayed.isEmpty()) {
-            List<SecondaryPlan> plan = expandCraftingIngredients(fromDisplayed, client);
+            List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(fromDisplayed, client);
             logAutoCollectDetail("displayed(" + displayed.size() + "行)", displayed, fromDisplayed, client);
-            return new AutoCollectResult(fromDisplayed, plan);
+            return new MaterialDemandCore.AutoCollectResult(fromDisplayed, plan);
         }
         List<MaterialListEntry> rows;
         String path;
@@ -279,12 +266,12 @@ public class FillMaterialCalculator {
                 path = "方块视图(实时)";
             }
         } catch (Exception e) {
-            return new AutoCollectResult(List.of(), List.of());
+            return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
         List<ItemStack> out = missingStacksFromRows(rows);
-        List<SecondaryPlan> plan = expandCraftingIngredients(out, client);
+        List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(out, client);
         logAutoCollectDetail(path + "(" + rows.size() + "行)", rows, out, client);
-        return new AutoCollectResult(out, plan);
+        return new MaterialDemandCore.AutoCollectResult(out, plan);
     }
 
     /**
@@ -479,14 +466,13 @@ public class FillMaterialCalculator {
     }
 
     /**
-     * 二级材料展开（Ray 2026-11-14：「萤石粉也闪烁了，是需要拿的材料为什么没拿过来」）：
-     * 材料列表行右侧的合成提示（例：海晶石砖 1 ← 萤石粉 + 蓝色染料）里的**原料**也是要收集的。
-     * 对每个缺失行找它的合成配方，按「缺失量 ÷ 单次产量」向上取整折算原料量，**再减去身上已有**
-     * （玩家背包 36 格）——身上够的部分不重复收。只展开一层（原料不再递归）。
+     * 二级材料展开 —— **薄适配器**：真正算法在 {@link MaterialDemandCore#expand}
+     * （批次 3 步骤 A 抽离，行为与历史版本一字不改）。这里只负责：拿客户端配方表 → 构造配方查询 →
+     * 把结果并进清单并打判据日志。
      */
-    private static List<SecondaryPlan> expandCraftingIngredients(List<ItemStack> wanted, MinecraftClient client) {
-        // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式，
-        // 显示多少收多少、不带原料——清点/转运场景）
+    private static List<MaterialDemandCore.SecondaryPlan> expandCraftingIngredients(List<ItemStack> wanted,
+                                                                                    MinecraftClient client) {
+        // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式）
         if (!com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()) {
             return List.of();
         }
@@ -502,47 +488,25 @@ public class FillMaterialCalculator {
                 crafting.add(new net.minecraft.recipe.RecipeEntry<>(entry.id(), cr));
             }
         }
-        // 展开源 = 当前视图的显示行（⛔ v1.16.12：不混入原生缺失行，各视图各收各的）
-        record SourceRow(ItemStack stack, int missing) {}
-        List<SourceRow> sources = new ArrayList<>();
-        for (ItemStack want : wanted) {
-            sources.add(new SourceRow(want, want.getCount()));
-        }
-        List<ItemStack> additions = new ArrayList<>();
-        // ⭐ v1.19.1-Ray：本行展开出来的原料（原始量）也记下来，服务端据此判断「成品够就跳过原料」
-        List<SecondaryPlan> plan = new ArrayList<>();
-        int secondaryThreshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
-        // ★ v1.16.26-Ray（Ray 2026-11-16：「还缺 1 个平滑石英块，自动收集没提取过来」）：
-        //   **先把所有行的原料按物品聚合，再统一扣一次「已有富余」**。
-        //   旧写法在 `for (Ingredient …)` 里逐槽扣 spare ⇒ 一条 6 格配方被扣 6 次 spare：
-        //   实测台阶+楼梯共需 9 个平滑石英块、身上 1737、直接放置占 1729 ⇒ 富余 8，
-        //   本该收 9−8=1；逐槽扣（每槽需 1、减 8）⇒ 9 个槽全变 0 ⇒ 一个都不收。
-        //   聚合后「同一物品跨行」（台阶/楼梯各扣一次 spare）也只扣一次。
-        Map<net.minecraft.item.Item, Integer> totalNeeds = new LinkedHashMap<>();
-        for (SourceRow source : sources) {
-            int wantMissing = source.missing();
-            // 【二级展开阈值】（Ray 2026-11-14：漏斗缺 1198 的铁锭原料 6000 个塞爆背包）：
-            // 缺失量超过阈值的行不展开合成原料——巨量缺料走专门获取途径；小缺料（海晶灯缺 1）才合成备料。
-            // ⚠️ 只挡二级展开；一级行本体照常收集。
-            if (wantMissing > secondaryThreshold) {
-                continue;
+        // 配方查询（按物品缓存；第一条匹配的配方＝历史行为）
+        Map<net.minecraft.item.Item, MaterialDemandCore.Recipe> recipeCache = new LinkedHashMap<>();
+        MaterialDemandCore.RecipeSource recipeSource = item -> {
+            if (recipeCache.containsKey(item)) {
+                return recipeCache.get(item);
             }
-            ItemStack want = source.stack();
+            MaterialDemandCore.Recipe found = null;
             for (var recipeEntry : crafting) {
-                var recipe = recipeEntry.value();
                 net.minecraft.item.ItemStack output;
                 try {
-                    output = recipe.getResult(registryLookup);
+                    output = recipeEntry.value().getResult(registryLookup);
                 } catch (Throwable ignored) {
                     continue;
                 }
-                if (output.isEmpty() || output.getItem() != want.getItem()) {
+                if (output.isEmpty() || output.getItem() != item) {
                     continue;
                 }
-                int outPerCraft = Math.max(1, output.getCount());
-                int times = (int) Math.ceil((double) wantMissing / outPerCraft);
-                Map<net.minecraft.item.Item, Integer> rowNeeds = new LinkedHashMap<>();
-                for (net.minecraft.recipe.Ingredient ingredient : recipe.getIngredients()) {
+                List<MaterialDemandCore.Ingredient> ingredients = new ArrayList<>();
+                for (net.minecraft.recipe.Ingredient ingredient : recipeEntry.value().getIngredients()) {
                     if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
                         continue;
                     }
@@ -550,41 +514,24 @@ public class FillMaterialCalculator {
                     if (options == null || options.length == 0 || options[0].isEmpty()) {
                         continue;
                     }
-                    int need = options[0].getCount() * times;
-                    if (need > 0) {
-                        rowNeeds.merge(options[0].getItem(), need, Integer::sum);
-                    }
+                    ingredients.add(new MaterialDemandCore.Ingredient(options[0].getItem(), options[0].getCount()));
                 }
-                if (!rowNeeds.isEmpty()) {
-                    List<ItemStack> rowIngredients = new ArrayList<>();
-                    rowNeeds.forEach((item, amount) -> {
-                        totalNeeds.merge(item, amount, Integer::sum);
-                        rowIngredients.add(new ItemStack(item, amount));
-                    });
-                    plan.add(new SecondaryPlan(want.getItem(), wantMissing, rowIngredients));
-                }
-                break; // 每行只按第一条匹配配方展开
+                found = new MaterialDemandCore.Recipe(Math.max(1, output.getCount()), ingredients);
+                break;   // 每行只按第一条匹配配方展开
             }
-        }
-        // 统一扣「已有富余」，**每个物品只扣一次**：
-        //   ⚠️ 与一级行**叠加**是 Ray 2026-11-14 定稿（v1.16.8 撤销 v1.16.7 的去重）：
-        //   「海晶灯之类需要二级材料正好一起拿过来，减少工作量少拿一次」。
-        //   ⛔ v1.16.21-Ray（Ray 2026-11-15）：只有**富余**能算已有 = 身上 − 该物品自己的总需求（1729），
-        //   否则身上 1729 个（全被直接放置占用）会把 3/6 的合成需求减成 0。
-        for (Map.Entry<net.minecraft.item.Item, Integer> entry : totalNeeds.entrySet()) {
-            int have = countHeldNow(client, entry.getKey());
-            int reserved = ownTotalDemand(entry.getKey());
-            int spare = Math.max(0, have - reserved);
-            int need = Math.max(0, entry.getValue() - spare);
+            recipeCache.put(item, found);
+            return found;
+        };
+        int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+        MaterialDemandCore.Result result = MaterialDemandCore.expand(wanted, recipeSource,
+                item -> countHeldNow(client, item), FillMaterialCalculator::ownTotalDemand, threshold);
+        for (MaterialDemandCore.Demand demand : result.demands()) {
             LOGGER.info("[auto-collect] 二级 {}：聚合需求 {}｜已有 {}｜自用 {}｜富余 {}｜最终 {}",
-                    net.minecraft.registry.Registries.ITEM.getId(entry.getKey()).getPath(),
-                    entry.getValue(), have, reserved, spare, need);
-            if (need > 0) {
-                additions.add(new ItemStack(entry.getKey(), need));
-            }
+                    net.minecraft.registry.Registries.ITEM.getId(demand.item()).getPath(),
+                    demand.aggregated(), demand.have(), demand.reserved(), demand.spare(), demand.finalNeed());
         }
         // 追加进清单（同物品合并）
-        for (ItemStack add : additions) {
+        for (ItemStack add : result.additions()) {
             boolean merged = false;
             for (ItemStack w : wanted) {
                 if (w.getItem() == add.getItem()) {
@@ -597,7 +544,7 @@ public class FillMaterialCalculator {
                 wanted.add(add);
             }
         }
-        return plan;
+        return result.plan();
     }
 
     /**

@@ -106,7 +106,8 @@ public final class AutoCollectController {
             return;
         }
         // ③ 清单缓存要热（材料列表打开/刷新过）
-        FillMaterialCalculator.AutoCollectResult result = FillMaterialCalculator.getCurrentMissingForAutoCollect();
+        com.mimicenzymes.litematicafiller.materials.MaterialDemandCore.AutoCollectResult result =
+                FillMaterialCalculator.getCurrentMissingForAutoCollect();
         List<ItemStack> missing = result.items();
         if (missing.isEmpty()) {
             actionbar(client, "当前视图没有缺失材料（材料列表切到容器/全部后收集量会跟着变）");

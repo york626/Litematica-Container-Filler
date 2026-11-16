@@ -217,10 +217,10 @@ public final class BatchServerLink {
 
     /** 【自动收集投影材料】发送（客户端长按触发；缺料清单来自材料列表「全部」视图缓存）。 */
     public static void sendCollectMissing(BlockPos pos, List<ItemStack> missing,
-                                          List<com.mimicenzymes.litematicafiller.materials.FillMaterialCalculator.SecondaryPlan> plan) {
+                                          List<com.mimicenzymes.litematicafiller.materials.MaterialDemandCore.SecondaryPlan> plan) {
         List<SecondaryPlanEntry> entries = new ArrayList<>();
         if (plan != null) {
-            for (com.mimicenzymes.litematicafiller.materials.FillMaterialCalculator.SecondaryPlan p : plan) {
+            for (com.mimicenzymes.litematicafiller.materials.MaterialDemandCore.SecondaryPlan p : plan) {
                 entries.add(new SecondaryPlanEntry(p.primary(), p.need(), p.ingredients()));
             }
         }
