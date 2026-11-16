@@ -7,9 +7,13 @@ import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.litematica.schematic.placement.SubRegionPlacement;
 import fi.dy.masa.litematica.scheduler.tasks.TaskCountBlocksPlacement;
 import fi.dy.masa.litematica.selection.Box;
+import net.minecraft.client.MinecraftClient;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * **「放置启用」关掉时，材料统计照样扫得到区块**（Ray 2026-11-13，第一层；2026-11-16 从工具箱迁入）。
@@ -30,6 +34,35 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  */
 @Mixin(TaskCountBlocksPlacement.class)
 public class MixinTaskCountBlocksPlacementIgnoreEnabled {
+
+    /** 纯 Litematica 类型，shadow 最稳（同一个目标类里的字段）。 */
+    @Shadow(remap = false)
+    protected SchematicPlacement schematicPlacement;
+
+    /**
+     * ⛔ v1.18.2-Ray（Ray 2026-11-16：「关掉放置启用再打开材料列表，内容没了」的**第二层**）：
+     * 原版 {@code canExecute() = isInWorld() && schematicWorld != null}。而「放置全关」时 Litematica 会把
+     * schematicWorld 置空（投影世界只为已启用+已渲染的放置创建）⇒ 任务**根本不执行**、onStop 把空清单
+     * 写进材料列表 ⇒ 界面被清空。方块状态已由 {@link MixinTaskCountBlocksPlacementOfflineSampler} 直接读投影补上，
+     * 所以这里在「本放置未启用 + 有世界」时放行。
+     */
+    @Inject(method = "canExecute", at = @At("RETURN"), cancellable = true, remap = false, require = 0)
+    private void lcf$allowWithoutSchematicWorld(CallbackInfoReturnable<Boolean> cir) {
+        if (Boolean.TRUE.equals(cir.getReturnValue())) {
+            return;
+        }
+        if (!Configs.MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED.getBooleanValue()) {
+            return;
+        }
+        if (this.schematicPlacement == null || this.schematicPlacement.isEnabled()) {
+            return;
+        }
+        if (MinecraftClient.getInstance().world == null) {
+            return;   // 没世界时不放行（与原版 isInWorld 一致）
+        }
+        MaterialListDiagnostics.logExecuteWithoutSchematicWorldOnce();
+        cir.setReturnValue(true);
+    }
 
     @Redirect(
             method = "<init>(Lfi/dy/masa/litematica/schematic/placement/SchematicPlacement;" +

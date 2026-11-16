@@ -18,6 +18,9 @@ public final class MaterialListDiagnostics {
     /** 「取区块时忽略放置启用」只打一次。 */
     private static final AtomicBoolean IGNORE_PLACEMENT_LOGGED = new AtomicBoolean();
 
+    /** 「schematicWorld 为空也放行统计任务」只打一次。 */
+    private static final AtomicBoolean EXECUTE_WITHOUT_WORLD_LOGGED = new AtomicBoolean();
+
     private MaterialListDiagnostics() {
     }
 
@@ -25,6 +28,13 @@ public final class MaterialListDiagnostics {
     public static void logIgnorePlacementOnce() {
         if (IGNORE_PLACEMENT_LOGGED.compareAndSet(false, true)) {
             LOGGER.info("[material-list] 材料统计：已忽略「放置启用」取区块（改 ANY）");
+        }
+    }
+
+    /** 判据：放置全关、schematicWorld 为空时，统计任务仍被放行（否则清单会被写成空）。 */
+    public static void logExecuteWithoutSchematicWorldOnce() {
+        if (EXECUTE_WITHOUT_WORLD_LOGGED.compareAndSet(false, true)) {
+            LOGGER.info("[material-list] 材料统计：放置全关（schematicWorld 为空）⇒ 仍放行任务，方块状态改读投影数据");
         }
     }
 

@@ -62,6 +62,11 @@ public abstract class MixinTaskCountBlocksPlacementOfflineSampler {
             if (state != null) {
                 return state;
             }
+            // ⛔ v1.18.2-Ray：放置全关时 schematicWorld 是 **null**（投影世界被销毁）⇒ 不能回退到原方法，
+            //   否则 NPE。取不到就按空气算（区域外的坐标本来就是空气）。
+            if (world == null) {
+                return net.minecraft.block.Blocks.AIR.getDefaultState();
+            }
         }
         return world.getBlockState(pos);
     }
