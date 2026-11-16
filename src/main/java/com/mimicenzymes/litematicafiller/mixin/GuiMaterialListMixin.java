@@ -193,6 +193,14 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             List<MaterialListEntry> targetList = mimic_buildTargetList();
 
+            // ⛔ v1.18.1-Ray：视图算出来是空的、但清单里有东西 ⇒ **不覆盖**（等统计/缓存就绪）。
+            if (targetList.isEmpty()) {
+                ImmutableList<MaterialListEntry> now = mimic_readMaterialListAll();
+                if (now != null && !now.isEmpty()) {
+                    return;
+                }
+            }
+
             // ⛔ v1.16.16（Ray 实测「容器视图把方块视图的箱子/台阶/楼梯都显示出来了」）：
             //    只写**视图行**——界面渲染读的正是 materialListAll，写 concat（原生+视图）等于把
             //    原生行也显示进容器视图。原生数据由 mimic_originalVanillaLists 缓存兜底，
@@ -246,6 +254,10 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             if (mimic_cachedVanillaList == null) {
                 mimic_cachedVanillaList = mimic_getOriginalVanillaList(currentRef);
+                if (mimic_cachedVanillaList == null) {
+                    // 清单还没统计出来（放置关闭后首次打开就是这种）⇒ 先别动界面
+                    return;
+                }
                 mimic_needsCalculation = true;
             } else if (!mimic_forceReplacementRefresh && currentRef != mimic_lastInjectedRef) {
                 // ⛔ v1.16.20-Ray（Ray 2026-11-15：「打开一下全部视图，平滑石英块就多一行」）：
@@ -278,6 +290,11 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             }
 
             List<MaterialListEntry> targetList = mimic_buildTargetList();
+
+            // ⛔ v1.18.1-Ray：视图算出来是空的、但清单里有东西 ⇒ **不覆盖**（等统计/缓存就绪）。
+            if (targetList.isEmpty() && !currentRef.isEmpty()) {
+                return;
+            }
 
             int scroll = mimic_getScrollPosition();
 
@@ -321,10 +338,18 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
         if (currentRef == null) return null;
 
         List<MaterialListEntry> original = mimic_originalVanillaLists.get(materialList);
-        if (original != null) {
+        if (original != null && !original.isEmpty()) {
             return new ArrayList<>(original);
         }
-
+        // ⛔ v1.18.1-Ray（Ray 2026-11-16「关掉放置启用后打开材料列表就空了」的根因）：
+        //   统计任务还没跑完时 materialListAll 是**空的**（放置关闭时首次打开尤其如此）；
+        //   旧写法把这份空表当"原生行"缓存下来 ⇒ 之后每 50ms 的注入看门狗一直拿空原生行
+        //   构建视图，把统计出来的真清单覆盖成空 ⇒ 界面一直「被清空」。
+        //   空表**不缓存、也不当有效原生行**，等统计结果到了再收。
+        if (currentRef.isEmpty()) {
+            mimic_originalVanillaLists.remove(materialList);
+            return null;
+        }
         original = new ArrayList<>(currentRef);
         mimic_originalVanillaLists.put(materialList, original);
         return new ArrayList<>(original);
