@@ -1,9 +1,0 @@
-v1.20.19-Ray：已有量改为 max(Litematica 统计, 自算)
-
-- v1.20.18 完全自算后实测散装也识别不了（窗口列表在 682/730/981 行间抖动，说明自算扫描返回空，
-  或个别槽位异常拖垮整张表）⇒ 改为两边各算一遍取较大值：
-  · Litematica 的 getInventoryItemCounts（散装/原版潜影盒/收纳袋）
-  · 自算扫描（递归拆：潜影盒/增强潜影盒/收纳袋/精妙背包/背包里的盒子 + Trinkets）
-  取 max 而不是相加 ⇒ 两边都认的不会翻倍，Litematica 认不出的由自算补上。
-- 自算扫描加逐槽 try/catch（单个坏物品不拖垮整表）+ 10 秒节流的 WARN 堆栈（诊断用）。
-- 过滤前仍把每行 countAvailable 补成 max(原值, availableOf)。
