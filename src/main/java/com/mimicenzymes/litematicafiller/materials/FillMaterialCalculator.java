@@ -221,10 +221,8 @@ public class FillMaterialCalculator {
      */
     /** 材料列表 GUI 当前显示的行（视图+搜索过滤后；{@code MixinWidgetListBaseCapture} 每次绘制刷新）。 */
     private static volatile List<MaterialListEntry> displayedMaterialRows = List.of();
-    /** 上面那份快照是否来自**搜索框过滤**（true ⇒ 自动收集只收搜索结果，Ray 2026-11-17 定）。 */
-    private static volatile boolean displayedRowsFiltered = false;
 
-    public static void setDisplayedMaterialRows(List<?> rows, boolean filtered) {
+    public static void setDisplayedMaterialRows(List<?> rows) {
         List<MaterialListEntry> list = new ArrayList<>();
         for (Object row : rows) {
             if (row instanceof MaterialListEntry entry && entry != null) {
@@ -232,7 +230,6 @@ public class FillMaterialCalculator {
             }
         }
         displayedMaterialRows = list;
-        displayedRowsFiltered = filtered;
     }
 
     /** 诊断（v1.20.6）：控件真正重建列表的时刻（排查「切视图先闪旧列表」的时序）。 */
@@ -337,12 +334,8 @@ public class FillMaterialCalculator {
         if (client.player == null || materialList == null) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
-        // v1.20.13（Ray 2026-11-17）：搜索框有内容 ⇒ 只收「搜索出来的那几行」；否则按 HUD 实时行。
-        //   （v1.20.12 曾因 ESC 先关搜索框而撤掉；现在 MixinScreenEscapeMaterialList 让 ESC 在
-        //     搜索激活时**直接关整个界面**，搜索状态保留到关闭那一刻，这个分支才真正可用。）
-        ViewRows view = displayedRowsFiltered
-                ? new ViewRows(displayedMaterialRows, "搜索过滤(显示行)")
-                : hudLiveRows(client, materialList);
+        // v1.20.15（Ray 2026-11-17 定稿）：**搜索框相关改动全部撤回**，自动收集始终按 HUD 实时行。
+        ViewRows view = hudLiveRows(client, materialList);
         List<ItemStack> out = missingStacksFromRows(view.rows());
         if (out.isEmpty()) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());

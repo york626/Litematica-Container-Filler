@@ -38,8 +38,7 @@
     "MixinHandledScreenMaterialHighlight",
     "MixinMaterialListHudRenderer",
     "MixinMaterialListBaseSynthesisFilter",
-    "MixinKeyCallbackHotkeys",
-    "MixinWidgetSearchBarMaterialList"
+    "MixinKeyCallbackHotkeys"
   ],
   "injectors": {
     "defaultRequire": 1
