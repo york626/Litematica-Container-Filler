@@ -73,6 +73,7 @@ public final class MaterialBreakdownHint {
 
     /** 缓存归属：配方管理器换实例就整表作废。 */
     private static RecipeManager cacheOwner;
+    private static RecipeChooser.Index cachedRecipeIndex;
 
     /** 只打一次「已生效」日志，用来确认第三方 mixin 没有静默失效。 */
     private static final AtomicBoolean LOGGED = new AtomicBoolean();
@@ -514,12 +515,16 @@ public final class MaterialBreakdownHint {
             if (manager != cacheOwner) {
                 CACHE.clear();
                 cacheOwner = manager;
+                cachedRecipeIndex = RecipeChooser.index(world, manager);
+            }
+            if (cachedRecipeIndex == null) {
+                cachedRecipeIndex = RecipeChooser.index(world, manager);
             }
             Optional<Hint> cached = CACHE.get(item);
             if (cached != null) {
                 return cached.orElse(null);
             }
-            Hint computed = find(world, manager, item);
+            Hint computed = find(cachedRecipeIndex, item);
             CACHE.put(item, Optional.ofNullable(computed));
             return computed;
         } catch (Throwable t) {
@@ -539,9 +544,10 @@ public final class MaterialBreakdownHint {
      * <p>多个候选（铁锭既能由 9 铁粒合、也能由 1 铁块拆）的排序：<b>能互转的优先</b>
      * → <b>原料种类少的优先</b>（显示简洁）→ <b>单次产量小的优先</b>（更像"合成"而不是"拆解"）。
      */
-    private static Hint find(ClientWorld world, RecipeManager manager, Item requiredItem) {
+    private static Hint find(RecipeChooser.Index index, Item requiredItem) {
         // v1.20.16：选配方的逻辑抽到 RecipeChooser，显示端与收集/提取端**共用同一套**（P3 #5）
-        RecipeChooser.Choice choice = RecipeChooser.choose(world, manager, requiredItem);
+        // v1.20.20：改用按产出分组的 Index（旧版每次全表扫两遍，收集大箱子会卡）
+        RecipeChooser.Choice choice = index == null ? null : index.choose(requiredItem);
         if (choice == null) {
             return null;
         }

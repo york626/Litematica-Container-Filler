@@ -530,12 +530,14 @@ public class FillMaterialCalculator {
         net.minecraft.client.world.ClientWorld world = client.world;
         // 配方查询（按物品缓存）。⛔ v1.20.16：选配方改为与显示端**共用 RecipeChooser**（P3 #5）——
         //   旧实现「第一条匹配就 break」会和 HUD 的 ←/≈ 提示选到不同配方（铁锭 9 铁粒 vs 1 铁块之类）。
+        // v1.20.20：建一次按产出分组的索引（旧版每个物品都全表扫，自动收集大箱子会卡）
+        RecipeChooser.Index recipeIndex = RecipeChooser.index(world, recipeManager);
         Map<Item, MaterialDemandCore.Recipe> recipeCache = new LinkedHashMap<>();
         return item -> {
             if (recipeCache.containsKey(item)) {
                 return recipeCache.get(item);
             }
-            RecipeChooser.Choice choice = RecipeChooser.choose(world, recipeManager, item);
+            RecipeChooser.Choice choice = recipeIndex.choose(item);
             MaterialDemandCore.Recipe found = choice == null
                     ? null
                     : new MaterialDemandCore.Recipe(choice.outputCount(), choice.ingredients());
