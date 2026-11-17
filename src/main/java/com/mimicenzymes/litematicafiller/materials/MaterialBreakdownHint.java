@@ -540,145 +540,16 @@ public final class MaterialBreakdownHint {
      * → <b>原料种类少的优先</b>（显示简洁）→ <b>单次产量小的优先</b>（更像"合成"而不是"拆解"）。
      */
     private static Hint find(ClientWorld world, RecipeManager manager, Item requiredItem) {
-        List<Hint> candidates = new ArrayList<>();
-        for (RecipeEntry<CraftingRecipe> holder : manager.listAllOfType(RecipeType.CRAFTING)) {
-            try {
-                CraftingRecipe recipe = holder.value();
-                if (recipe == null) {
-                    continue;
-                }
-                ItemStack output = recipe.getResult(world.getRegistryManager());
-                if (output == null || output.isEmpty() || !output.isOf(requiredItem)) {
-                    continue;
-                }
-                int outputCount = output.getCount();
-                if (outputCount <= 0) {
-                    continue;
-                }
-
-                // 收集原料（同种合并消耗数）；任何一格认不出来就整条跳过
-                Map<Item, Integer> counts = new LinkedHashMap<>();
-                boolean unusable = false;
-                int cells = 0;
-                for (Ingredient ingredient : recipe.getIngredients()) {
-                    if (ingredient == null || ingredient.isEmpty()) {
-                        continue;
-                    }
-                    if (++cells > 9) {
-                        unusable = true;
-                        break;
-                    }
-                    ItemStack[] matching = ingredient.getMatchingStacks();
-                    if (matching.length == 0) {
-                        unusable = true;
-                        break;
-                    }
-                    Item inputItem = matching[0].getItem();
-                    // ★ v1.34.8-Ray（Ray 2026-11-15 报「箱子没有显示二级材料」）：
-                    //   tag 配方不再整条跳过 —— 「箱子」的原料是 #minecraft:planks，
-                    //   旧逻辑（多候选 ⇒ unusable）把它整行跳掉了，于是台阶/楼梯有 ← 提示、箱子没有。
-                    //   现在按**首个候选**表示（与填充机「提取二级材料」的取法一致：options[0]），
-                    //   这样 HUD 显示和实际提取的口径能对上；真要用别的木板也能用，这里只是提示。
-                    // 自己合自己（比如 9 个锭 ↔ 1 个块的反向）没有参考意义
-                    if (inputItem == requiredItem) {
-                        unusable = true;
-                        break;
-                    }
-                    counts.merge(inputItem, 1, Integer::sum);
-                }
-                if (unusable || counts.isEmpty()) {
-                    continue;
-                }
-
-                List<Part> parts = new ArrayList<>(counts.size());
-                for (Map.Entry<Item, Integer> entry : counts.entrySet()) {
-                    parts.add(new Part(entry.getKey(), entry.getValue()));
-                }
-                // 1 换 1 没有折算意义
-                if (outputCount == 1 && parts.size() == 1 && parts.get(0).count() == 1) {
-                    continue;
-                }
-                candidates.add(new Hint(parts, outputCount, false));
-            } catch (Throwable ignored) {
-                // 单条配方异常不影响其它候选
-            }
-        }
-        if (candidates.isEmpty()) {
+        // v1.20.16：选配方的逻辑抽到 RecipeChooser，显示端与收集/提取端**共用同一套**（P3 #5）
+        RecipeChooser.Choice choice = RecipeChooser.choose(world, manager, requiredItem);
+        if (choice == null) {
             return null;
         }
-
-        // 标记「能不能反向转换」：只有单一原料时才谈得上互转（红石粉 ⇄ 红石块）
-        List<Hint> resolved = new ArrayList<>(candidates.size());
-        for (Hint candidate : candidates) {
-            boolean reverse = candidate.parts.size() == 1
-                    && hasReverseRecipe(manager, world, candidate.parts.get(0).item(), requiredItem);
-            resolved.add(new Hint(candidate.parts, candidate.outputCount, reverse));
+        List<Part> parts = new ArrayList<>(choice.ingredients().size());
+        for (MaterialDemandCore.Ingredient ingredient : choice.ingredients()) {
+            parts.add(new Part(ingredient.item(), ingredient.amount()));
         }
-
-        Hint best = null;
-        for (Hint candidate : resolved) {
-            if (best == null) {
-                best = candidate;
-                continue;
-            }
-            // 互转优先
-            if (candidate.bidirectional != best.bidirectional) {
-                if (candidate.bidirectional) {
-                    best = candidate;
-                }
-                continue;
-            }
-            // 原料种类少的优先（HUD 一行放得下）
-            if (candidate.parts.size() != best.parts.size()) {
-                if (candidate.parts.size() < best.parts.size()) {
-                    best = candidate;
-                }
-                continue;
-            }
-            // 同为互转 / 同为单向：单次产量小的优先（更像"合成"而不是"拆解"）
-            if (candidate.outputCount < best.outputCount) {
-                best = candidate;
-            }
-        }
-        return best;
-    }
-
-    /** 是否存在「用 requiredItem 造出 candidateItem」的配方（即两个物品能互相转换）。 */
-    private static boolean hasReverseRecipe(RecipeManager manager, ClientWorld world, Item candidateItem, Item requiredItem) {
-        for (RecipeEntry<CraftingRecipe> holder : manager.listAllOfType(RecipeType.CRAFTING)) {
-            try {
-                CraftingRecipe recipe = holder.value();
-                if (recipe == null) {
-                    continue;
-                }
-                ItemStack output = recipe.getResult(world.getRegistryManager());
-                if (output == null || output.isEmpty() || !output.isOf(candidateItem)) {
-                    continue;
-                }
-                for (Ingredient ingredient : recipe.getIngredients()) {
-                    if (ingredient == null || ingredient.isEmpty()) {
-                        continue;
-                    }
-                    for (ItemStack stack : ingredient.getMatchingStacks()) {
-                        if (stack != null && !stack.isEmpty() && stack.isOf(requiredItem)) {
-                            return true;
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-                // 忽略单条异常
-            }
-        }
-        return false;
-    }
-
-    private static boolean allSameItem(ItemStack[] candidates, Item item) {
-        for (ItemStack candidate : candidates) {
-            if (candidate == null || candidate.isEmpty() || !candidate.isOf(item)) {
-                return false;
-            }
-        }
-        return true;
+        return new Hint(parts, choice.outputCount(), choice.bidirectional());
     }
 
     /**

@@ -527,49 +527,21 @@ public class FillMaterialCalculator {
      */
     private static MaterialDemandCore.RecipeSource buildRecipeSource(MinecraftClient client) {
         var recipeManager = client.player.networkHandler.getRecipeManager();
-        var registryLookup = client.player.getWorld().getRegistryManager();
-        // ⚠️ 1.21.1 的 getAllOfType 是 private ⇒ 用公开的 values() 全集再按类型过滤
-        List<net.minecraft.recipe.RecipeEntry<net.minecraft.recipe.CraftingRecipe>> crafting = new ArrayList<>();
-        for (var entry : recipeManager.values()) {
-            if (entry.value() instanceof net.minecraft.recipe.CraftingRecipe cr) {
-                crafting.add(new net.minecraft.recipe.RecipeEntry<>(entry.id(), cr));
-            }
-        }
-        // 配方查询（按物品缓存；第一条匹配的配方＝历史行为）
-        Map<net.minecraft.item.Item, MaterialDemandCore.Recipe> recipeCache = new LinkedHashMap<>();
-        MaterialDemandCore.RecipeSource recipeSource = item -> {
+        net.minecraft.client.world.ClientWorld world = client.world;
+        // 配方查询（按物品缓存）。⛔ v1.20.16：选配方改为与显示端**共用 RecipeChooser**（P3 #5）——
+        //   旧实现「第一条匹配就 break」会和 HUD 的 ←/≈ 提示选到不同配方（铁锭 9 铁粒 vs 1 铁块之类）。
+        Map<Item, MaterialDemandCore.Recipe> recipeCache = new LinkedHashMap<>();
+        return item -> {
             if (recipeCache.containsKey(item)) {
                 return recipeCache.get(item);
             }
-            MaterialDemandCore.Recipe found = null;
-            for (var recipeEntry : crafting) {
-                net.minecraft.item.ItemStack output;
-                try {
-                    output = recipeEntry.value().getResult(registryLookup);
-                } catch (Throwable ignored) {
-                    continue;
-                }
-                if (output.isEmpty() || output.getItem() != item) {
-                    continue;
-                }
-                List<MaterialDemandCore.Ingredient> ingredients = new ArrayList<>();
-                for (net.minecraft.recipe.Ingredient ingredient : recipeEntry.value().getIngredients()) {
-                    if (ingredient == net.minecraft.recipe.Ingredient.EMPTY) {
-                        continue;
-                    }
-                    ItemStack[] options = ingredient.getMatchingStacks();
-                    if (options == null || options.length == 0 || options[0].isEmpty()) {
-                        continue;
-                    }
-                    ingredients.add(new MaterialDemandCore.Ingredient(options[0].getItem(), options[0].getCount()));
-                }
-                found = new MaterialDemandCore.Recipe(Math.max(1, output.getCount()), ingredients);
-                break;   // 每行只按第一条匹配配方展开
-            }
+            RecipeChooser.Choice choice = RecipeChooser.choose(world, recipeManager, item);
+            MaterialDemandCore.Recipe found = choice == null
+                    ? null
+                    : new MaterialDemandCore.Recipe(choice.outputCount(), choice.ingredients());
             recipeCache.put(item, found);
             return found;
         };
-        return recipeSource;
     }
 
     /**
