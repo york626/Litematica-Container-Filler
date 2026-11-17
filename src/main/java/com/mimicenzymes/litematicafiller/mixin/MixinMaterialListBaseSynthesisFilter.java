@@ -52,6 +52,8 @@ import java.util.Map;
 @Mixin(MaterialListBase.class)
 public abstract class MixinMaterialListBaseSynthesisFilter {
 
+    @org.spongepowered.asm.mixin.Unique private static long lcf$lastAvailableLog;
+
     @Shadow(remap = false)
     protected List<MaterialListEntry> materialListPreFiltered;
 
@@ -123,14 +125,29 @@ public abstract class MixinMaterialListBaseSynthesisFilter {
         //   背包装的盒子它都看不见 ⇒ 行不隐藏、「已有」列恒 0。这里把「已有」补齐成 CF 的口径
         //   （{@link MaterialBreakdownHint#availableOf}：背包 + 潜影盒 + 收纳袋 + 精妙背包 + Trinkets）。
         try {
+            int changed = 0;
+            StringBuilder detail = new StringBuilder();
             for (MaterialListEntry entry : this.materialListAll) {
                 if (entry == null || entry.getStack() == null || entry.getStack().isEmpty()) {
                     continue;
                 }
+                int before = entry.getCountAvailable();
                 int full = MaterialBreakdownHint.availableOf(entry.getStack().getItem());
-                if (full > entry.getCountAvailable()) {
+                if (full > before) {
                     entry.setCountAvailable(full);
+                    if (changed < 5) {
+                        if (detail.length() > 0) detail.append(", ");
+                        detail.append(net.minecraft.registry.Registries.ITEM.getId(entry.getStack().getItem()).getPath())
+                                .append(' ').append(before).append("→").append(full);
+                    }
+                    changed++;
                 }
+            }
+            long nowLog = System.currentTimeMillis();
+            if (changed > 0 && nowLog - lcf$lastAvailableLog > 5_000L) {
+                lcf$lastAvailableLog = nowLog;
+                com.mimicenzymes.litematicafiller.materials.FillMaterialCalculator.logViewDebug(
+                        "已有补算：{} 行（前 5：{}）", changed, detail);
             }
         } catch (Throwable ignored) {
             // 补不上就按原版口径，不影响列表

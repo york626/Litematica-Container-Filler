@@ -81,8 +81,6 @@ public final class MaterialBreakdownHint {
     private static final AtomicBoolean LOGGED = new AtomicBoolean();
 
     /** 库存统计按 tick 缓存（同一 tick 背包不会变）。 */
-    private static long cachedTick = Long.MIN_VALUE;
-    private static Object2IntMap<ItemType> cachedCounts;
 
     /** 「其他行单向需求」按 500 ms 缓存：HUD 每帧每行都要问，不缓存会反复扫清单。 */
     private static long demandTick = Long.MIN_VALUE;
@@ -95,6 +93,11 @@ public final class MaterialBreakdownHint {
 
     /** 精妙背包等「Litematica 认不出的容器」里的物品统计，按 250 ms 缓存。 */
     private static long customTick = Long.MIN_VALUE;
+
+    // 诊断（v1.20.18）：这一轮扫描里精妙背包读到过几格内容（10s 节流打一行）
+    private static volatile boolean scanSawBackpack;
+    private static volatile int scanBackpackSlots;
+    private static long lastScanLog;
     private static Map<Item, Integer> customCounts = Map.of();
 
     // ── 精妙背包内容（世界存档里，不在物品组件里；只能走它的 API 反射读） ──
@@ -428,78 +431,36 @@ public final class MaterialBreakdownHint {
         }
         try {
             long now = System.currentTimeMillis() / 250L;
-            if (now != cachedTick || cachedCounts == null) {
-                cachedCounts = MaterialListUtils.getInventoryItemCounts(mc.player.getInventory());
-                cachedTick = now;
+            if (now != customTick) {
+                customTick = now;
+                customCounts = scanCustomContainers(mc.player);
             }
-            int base = cachedCounts.getInt(new ItemType(new ItemStack(item), true, false));
-            return base + countInCustomContainers(mc.player, item);
+            return customCounts.getOrDefault(item, 0);
         } catch (Throwable t) {
             return 0;
         }
     }
 
-    /**
-     * 精妙背包等「自定义容器组件」里的数量（原版潜影盒已由 Litematica 统计，这里跳过避免重复）。
-     *
-     * <h2>为什么要递归（Ray 2026-11-13 问「精妙背包里的盒装材料算不算」）</h2>
-     * <p>v1.30.10 之前只扫**一层** {@code ContainerComponent}：精妙背包里的散装材料能算，
-     * 但精妙背包里再装**潜影盒**（盒装材料）时，扫到的是盒子本身、{@code inner.isOf(item)}
-     * 不成立 ⇒ 盒里的材料全部漏掉。现在递归拆（精妙背包 → 潜影盒 → 材料），最多 4 层，
-     * 和「材料高亮」的递归深度保持一致。
-     *
-     * <p>⚠️ **只跳过玩家背包顶层**的潜影盒 / 收纳袋（Litematica 的
-     * {@code getInventoryItemCounts} 已经把它们拆开算过）；递归里遇到的潜影盒照拆 ——
-     * 那种是「藏在精妙背包里」的，Litematica 根本看不见。
-     *
-     * <p>按 250 ms 缓存整张「物品 → 数量」表：HUD 上十几行都要问同一个背包，
-     * 不能每行都全量扫一遍。
-     */
-    private static int countInCustomContainers(PlayerEntity player, Item item) {
-        long now = System.currentTimeMillis() / 250L;
-        if (now != customTick) {
-            customTick = now;
-            customCounts = scanCustomContainers(player);
-        }
-        return customCounts.getOrDefault(item, 0);
-    }
-
     /** 扫玩家背包＋穿身上的 Trinkets：把「Litematica 认不出的容器」的内容展开成「物品 → 数量」。 */
     private static Map<Item, Integer> scanCustomContainers(PlayerEntity player) {
         Map<Item, Integer> out = new HashMap<>();
+        scanSawBackpack = false;
+        scanBackpackSlots = 0;
         PlayerInventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
             scanHeldStack(inventory.getStack(slot), out);
         }
         scanTrinkets(player, out);
+        long nowMs = System.currentTimeMillis();
+        if (scanSawBackpack && nowMs - lastScanLog > 10_000L) {
+            lastScanLog = nowMs;
+            LOGGER.info("[material-list] 已有口径：精妙背包内容已计入（读到 {} 格）", scanBackpackSlots);
+        }
         return out;
     }
 
-    /**
-     * 一个「身上物品」对已有量的贡献。
-     *
-     * <p>⚠️ 跳过规则必须与 Litematica 的 {@code getInventoryItemCounts} 对齐，否则会重复计数：
-     * 潜影盒（含增强潜影盒等 ShulkerBoxBlock 子类）/ 收纳袋由 Litematica 展开 ⇒ 整件跳过；
-     * 其它方块物品 Litematica 只算物品本身 ⇒ 只补「带 CONTAINER 组件的模组容器」的内容物；
-     * 精妙背包内容物在世界存档里 ⇒ 走 API 读并递归（里面的潜影盒也拆）。
-     */
+    /** 一个「身上物品」对已有量的贡献：容器展开内容、普通物品算自己。 */
     private static void scanHeldStack(ItemStack stack, Map<Item, Integer> out) {
-        if (stack == null || stack.isEmpty()) {
-            return;
-        }
-        Item item = stack.getItem();
-        if (item instanceof BlockItem blockItem) {
-            if (blockItem.getBlock() instanceof ShulkerBoxBlock) {
-                return; // Litematica 已统计（内容物或盒子本身）
-            }
-            if (stack.contains(DataComponentTypes.CONTAINER)) {
-                collectContainerContents(stack, out, 0); // 模组容器方块：补内容物
-            }
-            return; // 其它方块物品：Litematica 已算物品本身
-        }
-        if (item instanceof BundleItem) {
-            return; // Litematica 已统计
-        }
         collectContainerContents(stack, out, 0);
     }
 
@@ -522,11 +483,26 @@ public final class MaterialBreakdownHint {
         if (isSophisticatedBackpack(stack.getItem())) {
             List<ItemStack> sbContents = sophisticatedBackpackContents(stack);
             if (sbContents != null) {
+                scanSawBackpack = true;
+                scanBackpackSlots += sbContents.size();
                 for (ItemStack inner : sbContents) {
                     hasContents = true;
                     collectContainerContents(inner, out, depth + 1);
                 }
                 return; // 背包本身不是材料，内容物已展开
+            }
+        }
+
+        // 收纳袋（Bundle）：内容的组件类型和 CONTAINER 不同，单独拆
+        net.minecraft.component.type.BundleContentsComponent bundle =
+                stack.get(DataComponentTypes.BUNDLE_CONTENTS);
+        if (bundle != null) {
+            for (ItemStack inner : bundle.iterate()) {
+                if (inner == null || inner.isEmpty()) {
+                    continue;
+                }
+                hasContents = true;
+                collectContainerContents(inner, out, depth + 1);
             }
         }
 
