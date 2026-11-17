@@ -206,10 +206,14 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             //    原生行也显示进容器视图。原生数据由 mimic_originalVanillaLists 缓存兜底，
             //    切回方块视图时恢复（injectSilently 的 listMode==0 分支）。
             List<MaterialListEntry> writeBack = targetList;
+            int widgetBefore = mimic_widgetEntryCount();
 
             mimic_isInjecting = true;
             try {
                 iMatList.setMaterialListEntries(writeBack);
+            } catch (Throwable t) {
+                // 诊断（v1.20.6）：写列表中途抛异常时 materialListAll 已换、控件没刷 ⇒ 会闪旧列表
+                FillMaterialCalculator.logViewDebugError("setMaterialListEntries 抛异常（列表写了但控件没刷）", t);
             } finally {
                 mimic_isInjecting = false;
             }
@@ -225,9 +229,36 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             int scroll = mimic_getScrollPosition();
             mimic_refreshWidget();
             mimic_setScrollPosition(scroll);
+            FillMaterialCalculator.logViewDebug("切视图：mode={} 目标={}行｜控件前={}行 刷新后={}行｜列表={}行",
+                    FillMaterialCalculator.listMode, writeBack.size(), widgetBefore,
+                    mimic_widgetEntryCount(),
+                    mimic_readMaterialListAll() == null ? -1 : mimic_readMaterialListAll().size());
 
         } catch (Exception ignored) {}
     }
+
+    /** 诊断（v1.20.6）：控件当前显示多少行（读 WidgetListBase.listContents）。 */
+    @Unique
+    private int mimic_widgetEntryCount() {
+        try {
+            Object widget = mimic_getWidget();
+            if (widget == null) return -1;
+            Class<?> c = widget.getClass();
+            while (c != null) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    if (f.getName().equals("listContents")) {
+                        f.setAccessible(true);
+                        Object v = f.get(widget);
+                        return v instanceof java.util.List<?> list ? list.size() : -1;
+                    }
+                }
+                c = c.getSuperclass();
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
 
     @Unique
     @SuppressWarnings("unchecked")

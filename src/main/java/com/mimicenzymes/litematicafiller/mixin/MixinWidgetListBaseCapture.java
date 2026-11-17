@@ -33,6 +33,13 @@ public abstract class MixinWidgetListBaseCapture {
     private void lcf(CallbackInfo ci) {
         if ((Object) this instanceof WidgetListMaterialList) {
             FillMaterialCalculator.setDisplayedMaterialRows(this.listContents);
+            // 诊断（v1.20.6）：控件真正重建的时刻 + 首行，用来钉「切视图先闪旧列表」的时序
+            String first = "";
+            if (!this.listContents.isEmpty()
+                    && this.listContents.get(0) instanceof fi.dy.masa.litematica.materials.MaterialListEntry entry) {
+                first = entry.getStack().getName().getString();
+            }
+            FillMaterialCalculator.logWidgetRebuild(this.listContents.size(), first);
         }
     }
 }

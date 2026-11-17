@@ -232,6 +232,27 @@ public class FillMaterialCalculator {
         displayedMaterialRows = list;
     }
 
+    /** 诊断（v1.20.6）：控件真正重建列表的时刻（排查「切视图先闪旧列表」的时序）。 */
+    private static long lastWidgetRebuildLog;
+
+    public static void logWidgetRebuild(int size, String first) {
+        long now = System.currentTimeMillis();
+        if (now - lastWidgetRebuildLog < 100L) {
+            return;
+        }
+        lastWidgetRebuildLog = now;
+        LOGGER.info("[view-debug] 控件重建：{} 行｜首行={}｜mode={}", size, first, listMode);
+    }
+
+    /** 诊断（v1.20.6）：Mixin 里不要放静态 logger（静态初始化不可靠），统一走这里。 */
+    public static void logViewDebug(String format, Object... args) {
+        LOGGER.info("[view-debug] " + format, args);
+    }
+
+    public static void logViewDebugError(String message, Throwable t) {
+        LOGGER.warn("[view-debug] " + message, t);
+    }
+
     /** 当前视图的行 + 来源说明（收集 / 提取 / 高亮 / 步骤 B 的显示都走这一处）。 */
     private record ViewRows(List<MaterialListEntry> rows, String path) {
     }
@@ -623,6 +644,14 @@ public class FillMaterialCalculator {
         MaterialListBase materialList = DataManager.getMaterialList();
         if (client.player == null || client.player.networkHandler == null || materialList == null) {
             return null;
+        }
+        // 诊断（v1.20.6）：提取这一刻的列表状态——用来判断「按提取时列表跳变」是谁动的列表
+        try {
+            LOGGER.info("[extract-debug] 视图={}｜all={}行｜filtered={}行｜显示快照={}行｜界面={}",
+                    listMode, materialList.getMaterialsAll().size(),
+                    materialList.getMaterialsMissingOnly(false).size(), displayedMaterialRows.size(),
+                    client.currentScreen == null ? "无" : client.currentScreen.getClass().getSimpleName());
+        } catch (Throwable ignored) {
         }
         // ⛔ v1.20.4-Ray：候选行改走「材料列表显示的那一份」——**不再 merge 容器行**（会加回已隐藏的行），
         //    顺序也优先按 GUI 抓到的显示顺序（见 extractionRows 的注释）。
