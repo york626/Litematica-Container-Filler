@@ -37,7 +37,8 @@
     "MixinTaskCountBlocksBaseStopLog",
     "MixinHandledScreenMaterialHighlight",
     "MixinMaterialListHudRenderer",
-    "MixinMaterialListBaseSynthesisFilter"
+    "MixinMaterialListBaseSynthesisFilter",
+    "MixinKeyCallbackHotkeys"
   ],
   "injectors": {
     "defaultRequire": 1
