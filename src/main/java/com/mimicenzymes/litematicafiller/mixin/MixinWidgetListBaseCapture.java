@@ -29,10 +29,14 @@ public abstract class MixinWidgetListBaseCapture {
     @Shadow(remap = false)
     protected List<?> listContents;
 
+    /** 搜索框是否有过滤内容（malilib 的 protected 方法；有 ⇒ 自动收集只收搜索结果）。 */
+    @Shadow(remap = false)
+    protected abstract boolean hasFilter();
+
     @Inject(method = "refreshBrowserEntries", at = @At("TAIL"), remap = false, require = 0)
     private void lcf(CallbackInfo ci) {
         if ((Object) this instanceof WidgetListMaterialList) {
-            FillMaterialCalculator.setDisplayedMaterialRows(this.listContents);
+            FillMaterialCalculator.setDisplayedMaterialRows(this.listContents, this.hasFilter());
             // 诊断（v1.20.6）：控件真正重建的时刻 + 首行，用来钉「切视图先闪旧列表」的时序
             String first = "";
             if (!this.listContents.isEmpty()

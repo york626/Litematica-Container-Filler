@@ -221,8 +221,10 @@ public class FillMaterialCalculator {
      */
     /** 材料列表 GUI 当前显示的行（视图+搜索过滤后；{@code MixinWidgetListBaseCapture} 每次绘制刷新）。 */
     private static volatile List<MaterialListEntry> displayedMaterialRows = List.of();
+    /** 上面那份快照是否带**搜索框过滤**（true ⇒ 自动收集按「搜索结果」收，Ray 2026-11-17 定）。 */
+    private static volatile boolean displayedRowsFiltered = false;
 
-    public static void setDisplayedMaterialRows(List<?> rows) {
+    public static void setDisplayedMaterialRows(List<?> rows, boolean filtered) {
         List<MaterialListEntry> list = new ArrayList<>();
         for (Object row : rows) {
             if (row instanceof MaterialListEntry entry && entry != null) {
@@ -230,6 +232,7 @@ public class FillMaterialCalculator {
             }
         }
         displayedMaterialRows = list;
+        displayedRowsFiltered = filtered;
     }
 
     /** 诊断（v1.20.6）：控件真正重建列表的时刻（排查「切视图先闪旧列表」的时序）。 */
@@ -334,8 +337,13 @@ public class FillMaterialCalculator {
         if (client.player == null || materialList == null) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
-        // v1.20.10：按 HUD 显示的**实时**列表收集（旧 GUI 快照会过期 ⇒ 漏行）
-        ViewRows view = hudLiveRows(client, materialList);
+        // v1.20.11（Ray 2026-11-17）：
+        //   · GUI 搜索框有内容 ⇒ 按「搜索出来的那几行」收（搜索是明确的子集意图）；
+        //   · 没搜索 / 没开过 GUI ⇒ 按 HUD 同源的实时行收（避免旧快照过期漏行，见 v1.20.10）。
+        //   · 搜索命中 0 行时也保持「搜索结果为空 ⇒ 不收」，不要回退成全量。
+        ViewRows view = displayedRowsFiltered
+                ? new ViewRows(displayedMaterialRows, "搜索过滤(显示行)")
+                : hudLiveRows(client, materialList);
         List<ItemStack> out = missingStacksFromRows(view.rows());
         if (out.isEmpty()) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
