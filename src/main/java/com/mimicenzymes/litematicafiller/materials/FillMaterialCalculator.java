@@ -343,7 +343,18 @@ public class FillMaterialCalculator {
         if (out.isEmpty()) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
-        List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(out, client);
+        // ⛔ v1.20.23（Ray 2026-11-17「黑曜石每次开箱都重复收 4 个」）：二级材料的「自用预留」
+        //   必须只看**当前视图里还缺的行**——全部清单里包含「容器行」（容器里已经有货、列表已隐藏），
+        //   拿它的总量当预留会让 spare 永远为 0，于是每次收集都再要 4 个。
+        Map<net.minecraft.item.Item, Integer> reservedTotals = new java.util.HashMap<>();
+        for (MaterialListEntry entry : view.rows()) {
+            if (entry == null || entry.getStack().isEmpty()) {
+                continue;
+            }
+            reservedTotals.merge(entry.getStack().getItem(), Math.max(0, entry.getCountTotal()), Integer::sum);
+        }
+        List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(out, client,
+                item -> reservedTotals.getOrDefault(item, 0));
         logAutoCollectDetail(view.path() + "(" + view.rows().size() + "行)", view.rows(), out, client);
         // 判据（v1.20.20）：自动收集耗时（Ray 2026-11-17 报「拿木门要 3~4 秒」）——
         //   正常应在几十 ms 内；若这里上报秒级，看下面的「行数/计划数」判断是配方展开还是行扫描。
@@ -394,7 +405,7 @@ public class FillMaterialCalculator {
                 List<ItemStack> rowsMissing = missingStacksFromRows(rows);
                 if (!rowsMissing.isEmpty()) {
                     Map<net.minecraft.item.Item, Integer> ownTotals = new java.util.HashMap<>();
-                    for (MaterialListEntry entry : materialList.getMaterialsAll()) {
+                    for (MaterialListEntry entry : rows) {
                         if (entry == null || entry.getStack().isEmpty()) {
                             continue;
                         }
@@ -608,7 +619,8 @@ public class FillMaterialCalculator {
      * 把结果并进清单并打判据日志。
      */
     private static List<MaterialDemandCore.SecondaryPlan> expandCraftingIngredients(List<ItemStack> wanted,
-                                                                                    MinecraftClient client) {
+                                                                                    MinecraftClient client,
+                                                                                    java.util.function.ToIntFunction<net.minecraft.item.Item> reserved) {
         // 【带上二级材料】总开关（Ray 2026-11-15 定稿：默认开=备货带上原料；关=纯严格模式）
         if (!com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()) {
             return List.of();
@@ -618,20 +630,9 @@ public class FillMaterialCalculator {
         }
         MaterialDemandCore.RecipeSource recipeSource = buildRecipeSource(client);
         int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
-        // ⛔ v1.20.21（Ray 2026-11-17「收集要卡 3~4 秒」）：原来 ownTotalDemand 对**每个**需求物品
-        //   都扫一遍整份清单（821 × 1126 次），日志也逐个打 490 行 ⇒ 这里先算一次 map。
-        Map<net.minecraft.item.Item, Integer> ownTotals = new java.util.HashMap<>();
-        MaterialListBase demandList = DataManager.getMaterialList();
-        if (demandList != null) {
-            for (MaterialListEntry entry : demandList.getMaterialsAll()) {
-                if (entry == null || entry.getStack().isEmpty()) {
-                    continue;
-                }
-                ownTotals.merge(entry.getStack().getItem(), Math.max(0, entry.getCountTotal()), Integer::sum);
-            }
-        }
+        // v1.20.21：reserved 由调用方预计算（避免 821 × 1126 次全表扫）
         MaterialDemandCore.Result result = MaterialDemandCore.expand(wanted, recipeSource,
-                item -> countHeldNow(client, item), item -> ownTotals.getOrDefault(item, 0), threshold);
+                item -> countHeldNow(client, item), reserved, threshold);
         int logged = 0;
         for (MaterialDemandCore.Demand demand : result.demands()) {
             if (logged++ < 20) {
