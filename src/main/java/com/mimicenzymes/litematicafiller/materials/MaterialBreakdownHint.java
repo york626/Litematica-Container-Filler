@@ -93,6 +93,8 @@ public final class MaterialBreakdownHint {
 
     /** 精妙背包等「Litematica 认不出的容器」里的物品统计，按 250 ms 缓存。 */
     private static long customTick = Long.MIN_VALUE;
+    private static long baseTick = Long.MIN_VALUE;
+    private static Object2IntMap<ItemType> baseCounts;
 
     // 诊断（v1.20.18）：这一轮扫描里精妙背包读到过几格内容（10s 节流打一行）
     private static volatile boolean scanSawBackpack;
@@ -429,16 +431,42 @@ public final class MaterialBreakdownHint {
         if (mc == null || mc.player == null) {
             return 0;
         }
+        int base = 0;
+        int custom = 0;
+        try {
+            long now = System.currentTimeMillis() / 250L;
+            if (now != baseTick || baseCounts == null) {
+                baseCounts = MaterialListUtils.getInventoryItemCounts(mc.player.getInventory());
+                baseTick = now;
+            }
+            base = baseCounts.getInt(new ItemType(new ItemStack(item), true, false));
+        } catch (Throwable ignored) {
+            // Litematica 统计失败就只用自算
+        }
         try {
             long now = System.currentTimeMillis() / 250L;
             if (now != customTick) {
                 customTick = now;
                 customCounts = scanCustomContainers(mc.player);
             }
-            return customCounts.getOrDefault(item, 0);
+            custom = customCounts.getOrDefault(item, 0);
         } catch (Throwable t) {
-            return 0;
+            warnOnce("自算已有量失败（只用 Litematica 统计）", t);
         }
+        // ⭐ v1.20.19：取**较大值**而不是相加 —— 两边都认的（散装/原版潜影盒）不会翻倍，
+        //   Litematica 认不出的（增强潜影盒的盒中盒 / 精妙背包 / Trinkets）由自算补上。
+        return Math.max(base, custom);
+    }
+
+    private static long lastWarnLog;
+
+    private static void warnOnce(String message, Throwable t) {
+        long now = System.currentTimeMillis();
+        if (now - lastWarnLog < 10_000L) {
+            return;
+        }
+        lastWarnLog = now;
+        LOGGER.warn("[material-list] " + message, t);
     }
 
     /** 扫玩家背包＋穿身上的 Trinkets：把「Litematica 认不出的容器」的内容展开成「物品 → 数量」。 */
@@ -448,7 +476,11 @@ public final class MaterialBreakdownHint {
         scanBackpackSlots = 0;
         PlayerInventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
-            scanHeldStack(inventory.getStack(slot), out);
+            try {
+                scanHeldStack(inventory.getStack(slot), out);
+            } catch (Throwable t) {
+                warnOnce("扫背包槽 " + slot + " 失败（其余继续）", t);
+            }
         }
         scanTrinkets(player, out);
         long nowMs = System.currentTimeMillis();
