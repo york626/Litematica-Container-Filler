@@ -329,6 +329,7 @@ public class FillMaterialCalculator {
     }
 
     public static MaterialDemandCore.AutoCollectResult getCurrentMissingForAutoCollect() {
+        long startedAt = System.nanoTime();
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
         if (client.player == null || materialList == null) {
@@ -342,6 +343,10 @@ public class FillMaterialCalculator {
         }
         List<MaterialDemandCore.SecondaryPlan> plan = expandCraftingIngredients(out, client);
         logAutoCollectDetail(view.path() + "(" + view.rows().size() + "行)", view.rows(), out, client);
+        // 判据（v1.20.20）：自动收集耗时（Ray 2026-11-17 报「拿木门要 3~4 秒」）——
+        //   正常应在几十 ms 内；若这里上报秒级，看下面的「行数/计划数」判断是配方展开还是行扫描。
+        LOGGER.info("[auto-collect] 计算耗时 {} ms（源行 {}，需求 {} 项，二级计划 {} 条）",
+                (System.nanoTime() - startedAt) / 1_000_000L, view.rows().size(), out.size(), plan.size());
         return new MaterialDemandCore.AutoCollectResult(out, plan);
     }
 

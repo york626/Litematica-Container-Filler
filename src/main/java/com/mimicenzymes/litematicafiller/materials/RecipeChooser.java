@@ -164,8 +164,17 @@ public final class RecipeChooser {
     private RecipeChooser() {
     }
 
-    /** 建索引（按产出物品分组；`getResult` 只在这里算一次）。 */
+    // 会话级缓存：同一份配方表只建一次索引（收集/显示共用；数据包重载后 manager 变化会自动重建）
+    private static volatile RecipeManager cachedManager;
+    private static volatile ClientWorld cachedWorld;
+    private static volatile Index cachedIndex;
+
+    /** 建索引（按产出物品分组；`getResult` 只在这里算一次）；同一 manager/world 复用缓存。 */
     public static Index index(ClientWorld world, RecipeManager manager) {
+        Index cached = cachedIndex;
+        if (cached != null && manager == cachedManager && world == cachedWorld) {
+            return cached;
+        }
         Index index = new Index(world);
         if (world == null || manager == null) {
             return index;
@@ -185,6 +194,9 @@ public final class RecipeChooser {
                 // 单条配方异常不影响索引
             }
         }
+        cachedWorld = world;
+        cachedManager = manager;
+        cachedIndex = index;
         return index;
     }
 
