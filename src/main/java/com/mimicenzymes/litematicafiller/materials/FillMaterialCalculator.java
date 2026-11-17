@@ -275,6 +275,55 @@ public class FillMaterialCalculator {
         }
     }
 
+    /**
+     * **提取专用**的候选行 = 材料列表**真正显示的那一份**。
+     *
+     * <p>⛔ v1.20.4-Ray（Ray 2026-11-17：「全部视图提取到金合欢木板/木棍，切方块视图才按列表提取安山岩」）：
+     * 以前全部视图走 {@link #liveViewRows}，它在 {@code getMaterialsMissingOnly} 之后又
+     * {@code mergeLists(..., getCustomMaterialList(...))} 了一次。但容器/全部视图时 {@code materialListAll}
+     * 已经被注入成当前视图，filtered 里**本来就有**容器行；再 merge 只会把「自身需求已备够、列表已隐藏」
+     * 的容器行加回候选集（实测：列表可见 732 行，提取却按 1125 行挑），这些行把「前 N 行」名额吃掉
+     * ⇒ 提取到的不是屏幕最上面那几行（方块视图不 merge，所以同样代码是对的）。
+     *
+     * <p>顺序：**GUI 抓到的显示顺序优先**（{@code displayedMaterialRows}），快照里没有的行
+     * （提取前才统计出来的，v1.19.4 的场景）追加在后、用 MaterialListSorter 排 ⇒ 既按屏幕顺序、又一条不丢。
+     */
+    private static ViewRows extractionRows(MinecraftClient client, MaterialListBase materialList) {
+        fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                materialList.getMaterialsAll(), client.player);
+        List<MaterialListEntry> live = materialList.getMaterialsMissingOnly(true);
+        List<MaterialListEntry> displayed = displayedMaterialRows;
+
+        java.util.Set<MaterialListEntry> liveSet = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (MaterialListEntry entry : live) {
+            if (entry != null) liveSet.add(entry);
+        }
+
+        List<MaterialListEntry> ordered = new ArrayList<>(live.size());
+        java.util.Set<MaterialListEntry> taken = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        int fromDisplay = 0;
+        for (MaterialListEntry entry : displayed) {
+            if (entry != null && liveSet.contains(entry) && taken.add(entry)) {
+                ordered.add(entry);
+                fromDisplay++;
+            }
+        }
+
+        List<MaterialListEntry> rest = new ArrayList<>();
+        for (MaterialListEntry entry : live) {
+            if (entry != null && !taken.contains(entry)) {
+                rest.add(entry);
+            }
+        }
+        try {
+            rest.sort(new fi.dy.masa.litematica.materials.MaterialListSorter(materialList));
+        } catch (Throwable ignored) {
+            // 排序失败就按原顺序（宁可顺序差点，也别不提）
+        }
+        ordered.addAll(rest);
+        return new ViewRows(ordered, "显示行(显示顺序 " + fromDisplay + " + 新行 " + rest.size() + ")");
+    }
+
     public static MaterialDemandCore.AutoCollectResult getCurrentMissingForAutoCollect() {
         MinecraftClient client = MinecraftClient.getInstance();
         MaterialListBase materialList = DataManager.getMaterialList();
@@ -575,16 +624,10 @@ public class FillMaterialCalculator {
         if (client.player == null || client.player.networkHandler == null || materialList == null) {
             return null;
         }
-        // ⭐ 统一口径（批次 3）：视图行与收集/高亮同一处；缺失＝总需求 − 持有；不扣富余（预算在服务端做）
-        ViewRows view = liveViewRows(client, materialList);
-        // ⭐ v1.20.3-Ray（Ray 2026-11-16）：「按材料列表**显示顺序**，每轮只取前 N 行」——
-        //   一次全搬进容器处理不过来。列表显示顺序＝GUI/HUD 用的同一个 MaterialListSorter。
-        List<MaterialListEntry> ordered = new ArrayList<>(view.rows());
-        try {
-            ordered.sort(new fi.dy.masa.litematica.materials.MaterialListSorter(materialList));
-        } catch (Throwable ignored) {
-            // 排序失败就按原顺序（宁可顺序差点，也别不提）
-        }
+        // ⛔ v1.20.4-Ray：候选行改走「材料列表显示的那一份」——**不再 merge 容器行**（会加回已隐藏的行），
+        //    顺序也优先按 GUI 抓到的显示顺序（见 extractionRows 的注释）。
+        ViewRows view = extractionRows(client, materialList);
+        List<MaterialListEntry> ordered = view.rows();
         List<ItemStack> rowsMissing = missingStacksFromRows(ordered);
         int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
         int rowLimit = Math.max(1, com.mimicenzymes.litematicafiller.config.Configs.EXTRACT_SECONDARY_ROW_LIMIT.getIntegerValue());
