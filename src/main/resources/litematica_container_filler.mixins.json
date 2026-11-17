@@ -39,7 +39,7 @@
     "MixinMaterialListHudRenderer",
     "MixinMaterialListBaseSynthesisFilter",
     "MixinKeyCallbackHotkeys",
-    "MixinScreenEscapeMaterialList"
+    "MixinWidgetSearchBarMaterialList"
   ],
   "injectors": {
     "defaultRequire": 1
