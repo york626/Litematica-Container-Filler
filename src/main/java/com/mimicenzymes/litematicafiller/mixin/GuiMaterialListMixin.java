@@ -218,6 +218,14 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             mimic_lastInjectedRef = newRef;
             mimic_lastInjectedRows = new ArrayList<>(writeBack);
 
+            // ⭐ v1.20.5-Ray（Ray 2026-11-17「切 3 个视图时会跳一下才显示对应视图」）：
+            //   写完**立刻**刷新控件——以前这里不刷，要等看门狗下一拍（≤50ms）才重建列表，
+            //   中间那几帧还是旧视图 ⇒ 看起来"跳一下"。injectSilently 一直有这个刷新，按钮这条路漏了。
+            //   滚动位置照 injectSilently 的做法保留。
+            int scroll = mimic_getScrollPosition();
+            mimic_refreshWidget();
+            mimic_setScrollPosition(scroll);
+
         } catch (Exception ignored) {}
     }
 
