@@ -11,8 +11,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.component.Component;
 import net.minecraft.component.ComponentType;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -26,7 +24,6 @@ import net.minecraft.recipe.RecipeEntry;
 import net.minecraft.recipe.RecipeManager;
 import net.minecraft.recipe.RecipeType;
 import net.minecraft.util.collection.DefaultedList;
-import net.fabricmc.loader.api.FabricLoader;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -81,6 +78,8 @@ public final class MaterialBreakdownHint {
     private static final AtomicBoolean LOGGED = new AtomicBoolean();
 
     /** 库存统计按 tick 缓存（同一 tick 背包不会变）。 */
+    private static long cachedTick = Long.MIN_VALUE;
+    private static Object2IntMap<ItemType> cachedCounts;
 
     /** 「其他行单向需求」按 500 ms 缓存：HUD 每帧每行都要问，不缓存会反复扫清单。 */
     private static long demandTick = Long.MIN_VALUE;
@@ -93,28 +92,7 @@ public final class MaterialBreakdownHint {
 
     /** 精妙背包等「Litematica 认不出的容器」里的物品统计，按 250 ms 缓存。 */
     private static long customTick = Long.MIN_VALUE;
-    private static long baseTick = Long.MIN_VALUE;
-    private static Object2IntMap<ItemType> baseCounts;
-
-    // 诊断（v1.20.18）：这一轮扫描里精妙背包读到过几格内容（10s 节流打一行）
-    private static volatile boolean scanSawBackpack;
-    private static volatile int scanBackpackSlots;
-    private static long lastScanLog;
     private static Map<Item, Integer> customCounts = Map.of();
-
-    // ── 精妙背包内容（世界存档里，不在物品组件里；只能走它的 API 反射读） ──
-    private static final String SB_NAMESPACE = "sophisticatedbackpacks";
-    private static boolean sbLookupTried;
-    private static boolean sbLookupFailed;
-    private static java.lang.reflect.Method sbFromExistingData;
-    private static java.lang.reflect.Method sbGetInventoryHandler;
-    private static java.lang.reflect.Method sbGetSlots;
-    private static java.lang.reflect.Method sbGetStackInSlot;
-
-    // ── Trinkets（穿身上的精妙背包不在 player.getInventory() 里） ──
-    private static boolean tkLookupTried;
-    private static boolean tkAvailable;
-    private static java.lang.reflect.Method tkGetTrinketComponent;
 
     private MaterialBreakdownHint() {
     }
@@ -431,69 +409,60 @@ public final class MaterialBreakdownHint {
         if (mc == null || mc.player == null) {
             return 0;
         }
-        int base = 0;
-        int custom = 0;
         try {
             long now = System.currentTimeMillis() / 250L;
-            if (now != baseTick || baseCounts == null) {
-                baseCounts = MaterialListUtils.getInventoryItemCounts(mc.player.getInventory());
-                baseTick = now;
+            if (now != cachedTick || cachedCounts == null) {
+                cachedCounts = MaterialListUtils.getInventoryItemCounts(mc.player.getInventory());
+                cachedTick = now;
             }
-            base = baseCounts.getInt(new ItemType(new ItemStack(item), true, false));
-        } catch (Throwable ignored) {
-            // Litematica 统计失败就只用自算
-        }
-        try {
-            long now = System.currentTimeMillis() / 250L;
-            if (now != customTick) {
-                customTick = now;
-                customCounts = scanCustomContainers(mc.player);
-            }
-            custom = customCounts.getOrDefault(item, 0);
+            int base = cachedCounts.getInt(new ItemType(new ItemStack(item), true, false));
+            return base + countInCustomContainers(mc.player, item);
         } catch (Throwable t) {
-            warnOnce("自算已有量失败（只用 Litematica 统计）", t);
+            return 0;
         }
-        // ⭐ v1.20.19：取**较大值**而不是相加 —— 两边都认的（散装/原版潜影盒）不会翻倍，
-        //   Litematica 认不出的（增强潜影盒的盒中盒 / 精妙背包 / Trinkets）由自算补上。
-        return Math.max(base, custom);
     }
 
-    private static long lastWarnLog;
-
-    private static void warnOnce(String message, Throwable t) {
-        long now = System.currentTimeMillis();
-        if (now - lastWarnLog < 10_000L) {
-            return;
+    /**
+     * 精妙背包等「自定义容器组件」里的数量（原版潜影盒已由 Litematica 统计，这里跳过避免重复）。
+     *
+     * <h2>为什么要递归（Ray 2026-11-13 问「精妙背包里的盒装材料算不算」）</h2>
+     * <p>v1.30.10 之前只扫**一层** {@code ContainerComponent}：精妙背包里的散装材料能算，
+     * 但精妙背包里再装**潜影盒**（盒装材料）时，扫到的是盒子本身、{@code inner.isOf(item)}
+     * 不成立 ⇒ 盒里的材料全部漏掉。现在递归拆（精妙背包 → 潜影盒 → 材料），最多 4 层，
+     * 和「材料高亮」的递归深度保持一致。
+     *
+     * <p>⚠️ **只跳过玩家背包顶层**的潜影盒 / 收纳袋（Litematica 的
+     * {@code getInventoryItemCounts} 已经把它们拆开算过）；递归里遇到的潜影盒照拆 ——
+     * 那种是「藏在精妙背包里」的，Litematica 根本看不见。
+     *
+     * <p>按 250 ms 缓存整张「物品 → 数量」表：HUD 上十几行都要问同一个背包，
+     * 不能每行都全量扫一遍。
+     */
+    private static int countInCustomContainers(PlayerEntity player, Item item) {
+        long now = System.currentTimeMillis() / 250L;
+        if (now != customTick) {
+            customTick = now;
+            customCounts = scanCustomContainers(player);
         }
-        lastWarnLog = now;
-        LOGGER.warn("[material-list] " + message, t);
+        return customCounts.getOrDefault(item, 0);
     }
 
-    /** 扫玩家背包＋穿身上的 Trinkets：把「Litematica 认不出的容器」的内容展开成「物品 → 数量」。 */
+    /** 扫一遍玩家背包，把「Litematica 认不出的容器」里的内容全部展开成「物品 → 数量」。 */
     private static Map<Item, Integer> scanCustomContainers(PlayerEntity player) {
         Map<Item, Integer> out = new HashMap<>();
-        scanSawBackpack = false;
-        scanBackpackSlots = 0;
         PlayerInventory inventory = player.getInventory();
         for (int slot = 0; slot < inventory.size(); slot++) {
-            try {
-                scanHeldStack(inventory.getStack(slot), out);
-            } catch (Throwable t) {
-                warnOnce("扫背包槽 " + slot + " 失败（其余继续）", t);
+            ItemStack stack = inventory.getStack(slot);
+            if (stack == null || stack.isEmpty()) {
+                continue;
             }
-        }
-        scanTrinkets(player, out);
-        long nowMs = System.currentTimeMillis();
-        if (scanSawBackpack && nowMs - lastScanLog > 10_000L) {
-            lastScanLog = nowMs;
-            LOGGER.info("[material-list] 已有口径：精妙背包内容已计入（读到 {} 格）", scanBackpackSlots);
+            // 顶层潜影盒 / 收纳袋：Litematica 已统计过，跳过避免重复
+            if (stack.getItem() instanceof BlockItem || stack.getItem() instanceof BundleItem) {
+                continue;
+            }
+            collectContainerContents(stack, out, 0);
         }
         return out;
-    }
-
-    /** 一个「身上物品」对已有量的贡献：容器展开内容、普通物品算自己。 */
-    private static void scanHeldStack(ItemStack stack, Map<Item, Integer> out) {
-        collectContainerContents(stack, out, 0);
     }
 
     /**
@@ -509,35 +478,6 @@ public final class MaterialBreakdownHint {
             return;
         }
         boolean hasContents = false;
-
-        // 精妙背包：内容物在世界存档里，不在 CONTAINER 组件里 ⇒ 走 API 读
-        // （Ray 2026-11-17：「盒子放进精妙背包识别不了」就是这里以前没接）
-        if (isSophisticatedBackpack(stack.getItem())) {
-            List<ItemStack> sbContents = sophisticatedBackpackContents(stack);
-            if (sbContents != null) {
-                scanSawBackpack = true;
-                scanBackpackSlots += sbContents.size();
-                for (ItemStack inner : sbContents) {
-                    hasContents = true;
-                    collectContainerContents(inner, out, depth + 1);
-                }
-                return; // 背包本身不是材料，内容物已展开
-            }
-        }
-
-        // 收纳袋（Bundle）：内容的组件类型和 CONTAINER 不同，单独拆
-        net.minecraft.component.type.BundleContentsComponent bundle =
-                stack.get(DataComponentTypes.BUNDLE_CONTENTS);
-        if (bundle != null) {
-            for (ItemStack inner : bundle.iterate()) {
-                if (inner == null || inner.isEmpty()) {
-                    continue;
-                }
-                hasContents = true;
-                collectContainerContents(inner, out, depth + 1);
-            }
-        }
-
         for (Component<?> component : stack.getComponents()) {
             Object value;
             try {
@@ -558,110 +498,6 @@ public final class MaterialBreakdownHint {
         if (!hasContents) {
             out.merge(stack.getItem(), stack.getCount(), Integer::sum);
         }
-    }
-
-    private static boolean isSophisticatedBackpack(Item item) {
-        return item != null && net.minecraft.registry.Registries.ITEM.getId(item).getNamespace().equals(SB_NAMESPACE);
-    }
-
-    /** 读精妙背包里的物品；不是背包/读不到时返回 null。 */
-    private static List<ItemStack> sophisticatedBackpackContents(ItemStack stack) {
-        if (!FabricLoader.getInstance().isModLoaded(SB_NAMESPACE) || sbLookupFailed) {
-            return null;
-        }
-        try {
-            if (!sbLookupTried) {
-                sbLookupTried = true;
-                try {
-                    Class<?> wrapperClass = Class.forName(
-                            "net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper");
-                    Class<?> handlerClass = Class.forName(
-                            "net.p3pp3rf1y.sophisticatedcore.inventory.InventoryHandler");
-                    sbFromExistingData = wrapperClass.getMethod("fromExistingData", ItemStack.class);
-                    sbGetInventoryHandler = wrapperClass.getMethod("getInventoryHandler");
-                    sbGetSlots = handlerClass.getMethod("getSlots");
-                    sbGetStackInSlot = handlerClass.getMethod("getStackInSlot", int.class);
-                } catch (Throwable t) {
-                    sbLookupFailed = true;
-                    return null;
-                }
-            }
-            Object optional = sbFromExistingData.invoke(null, stack);
-            if (!(optional instanceof Optional<?> opt) || opt.isEmpty()) {
-                return null;
-            }
-            Object wrapper = opt.get();
-            Object handler = sbGetInventoryHandler.invoke(wrapper);
-            int slots = (Integer) sbGetSlots.invoke(handler);
-            List<ItemStack> contents = new ArrayList<>();
-            for (int i = 0; i < slots; i++) {
-                ItemStack inner = (ItemStack) sbGetStackInSlot.invoke(handler, i);
-                if (inner != null && !inner.isEmpty()) {
-                    contents.add(inner);
-                }
-            }
-            return contents;
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    /** 穿在 Trinkets 槽里的物品（精妙背包常用背心/腰带槽）——背包扫描看不到。 */
-    private static void scanTrinkets(PlayerEntity player, Map<Item, Integer> out) {
-        if (!tkLookupTried) {
-            tkLookupTried = true;
-            try {
-                Class<?> api = Class.forName("dev.emi.trinkets.api.TrinketsApi");
-                tkGetTrinketComponent = api.getMethod("getTrinketComponent",
-                        net.minecraft.entity.LivingEntity.class);
-                tkAvailable = true;
-            } catch (Throwable t) {
-                tkAvailable = false;
-            }
-        }
-        if (!tkAvailable) {
-            return;
-        }
-        try {
-            Object raw = tkGetTrinketComponent.invoke(null, player);
-            Object component = raw instanceof Optional<?> opt ? opt.orElse(null) : raw;
-            if (component == null) {
-                return;
-            }
-            Object pairs = component.getClass().getMethod("getAllEquipped").invoke(component);
-            if (!(pairs instanceof List<?> list)) {
-                return;
-            }
-            java.lang.reflect.Method second = null;
-            for (Object pair : list) {
-                if (second == null) {
-                    second = findPairSecond(pair.getClass());
-                }
-                Object value = second.invoke(pair);
-                if (value instanceof ItemStack stack) {
-                    scanHeldStack(stack, out);
-                }
-            }
-        } catch (Throwable ignored) {
-            // Trinkets 不在 / API 变了：当作没有
-        }
-    }
-
-    /** {@code Pair#getSecond} 的运行时名字（intermediary {@code method_15441}；dev 叫 getSecond）。 */
-    private static java.lang.reflect.Method findPairSecond(Class<?> pairClass) throws NoSuchMethodException {
-        for (String name : new String[]{"method_15441", "getSecond", "getRight"}) {
-            try {
-                return pairClass.getMethod(name);
-            } catch (NoSuchMethodException ignored) {
-                // 继续试下一个
-            }
-        }
-        for (java.lang.reflect.Method method : pairClass.getMethods()) {
-            if (method.getParameterCount() == 0 && method.getReturnType() == ItemStack.class) {
-                return method;
-            }
-        }
-        throw new NoSuchMethodException(pairClass.getName() + " 里找不到取 ItemStack 的 Pair 方法");
     }
 
     private static Hint lookup(Item item) {
