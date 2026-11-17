@@ -260,49 +260,30 @@ public class FillMaterialCalculator {
     }
 
     /**
-     * 【统一口径 · 视图选择】GUI 显示行优先（含搜索过滤），否则按 {@code listMode} 实时算：
-     * 容器视图＝容器材料行、全部＝原生+容器合并、方块＝只原生。
+     * **HUD / 自动收集 / 高亮专用**的行 = 和 HUD **完全同源**：材料列表的**实时** filtered 行。
      *
-     * <p>⚠️ 2026-11-16 批次 3 起：**收集、提取、高亮都用这一处**，不再各写一套分支。
-     */
-    private static ViewRows currentViewRows(MinecraftClient client, MaterialListBase materialList) {
-        List<MaterialListEntry> displayed = displayedMaterialRows;
-        if (!displayed.isEmpty()) {
-            return new ViewRows(displayed, "displayed");
-        }
-        return liveViewRows(client, materialList);
-    }
-
-    /**
-     * **实时**按当前 {@code listMode} 取行（不信 GUI 抓取快照）。
+     * <p>⛔ v1.20.10-Ray（Ray 2026-11-17 定稿：「自动收集先用 HUD 显示的实时列表」）：
+     * 以前收集/高亮优先用 {@code displayedMaterialRows}（材料列表 GUI 最后一次刷新抓的快照）。
+     * 但 GUI 一关快照就冻结，之后统计任务回填 / 换投影 / 换视图产生的新行不在快照里
+     * ⇒ HUD 上明明看得见、收集却漏掉（提取侧 v1.19.4 踩过同款坑）。
+     * 现在收集/高亮都改为读 HUD 的同一份行：
+     * {@code updateAvailableCounts(...) + getMaterialsMissingOnly(true)}。
      *
-     * <p>提取热键用这个：它在世界里按，材料列表 GUI 可能早关了，`displayedMaterialRows` 是旧快照——
-     * 2026-11-16 实测「面板显示缺 1 个箱子，提取却没算木板」就是快照里还没有那一行。
+     * <p>⚠️ 不要在这里 merge {@code getCustomMaterialList()}（提取 v1.20.4 的坑：会把列表已隐藏的容器行加回来）。
+     * <p>⚠️ 副作用：GUI 搜索框过滤**不再影响**收集（HUD 本来就不看搜索）。需要「只收搜索结果」时再另加开关。
      */
-    private static ViewRows liveViewRows(MinecraftClient client, MaterialListBase materialList) {
-        try {
-            if (listMode == 1) {
-                return new ViewRows(getCustomMaterialList(materialList), "容器视图(实时)");
-            }
-            if (listMode == 2) {
-                fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
-                        materialList.getMaterialsAll(), client.player);
-                return new ViewRows(mergeLists(materialList.getMaterialsMissingOnly(true),
-                        getCustomMaterialList(materialList)), "全部视图(实时)");
-            }
-            fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
-                    materialList.getMaterialsAll(), client.player);
-            return new ViewRows(materialList.getMaterialsMissingOnly(true), "方块视图(实时)");
-        } catch (Exception e) {
-            return new ViewRows(List.of(), "读取失败");
-        }
+    private static ViewRows hudLiveRows(MinecraftClient client, MaterialListBase materialList) {
+        fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                materialList.getMaterialsAll(), client.player);
+        List<MaterialListEntry> rows = materialList.getMaterialsMissingOnly(true);
+        return new ViewRows(rows, "HUD实时行(视图=" + listMode + ")");
     }
 
     /**
      * **提取专用**的候选行 = 材料列表**真正显示的那一份**。
      *
      * <p>⛔ v1.20.4-Ray（Ray 2026-11-17：「全部视图提取到金合欢木板/木棍，切方块视图才按列表提取安山岩」）：
-     * 以前全部视图走 {@link #liveViewRows}，它在 {@code getMaterialsMissingOnly} 之后又
+     * 以前全部视图走「实时视图行」，它在 {@code getMaterialsMissingOnly} 之后又
      * {@code mergeLists(..., getCustomMaterialList(...))} 了一次。但容器/全部视图时 {@code materialListAll}
      * 已经被注入成当前视图，filtered 里**本来就有**容器行；再 merge 只会把「自身需求已备够、列表已隐藏」
      * 的容器行加回候选集（实测：列表可见 732 行，提取却按 1125 行挑），这些行把「前 N 行」名额吃掉
@@ -353,8 +334,8 @@ public class FillMaterialCalculator {
         if (client.player == null || materialList == null) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
-        // 优先用「GUI 当前显示的行」（视图+搜索过滤后）——Ray 定稿口径：按显示的材料列表收集
-        ViewRows view = currentViewRows(client, materialList);
+        // v1.20.10：按 HUD 显示的**实时**列表收集（旧 GUI 快照会过期 ⇒ 漏行）
+        ViewRows view = hudLiveRows(client, materialList);
         List<ItemStack> out = missingStacksFromRows(view.rows());
         if (out.isEmpty()) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
@@ -372,7 +353,7 @@ public class FillMaterialCalculator {
      * **不展开二级原料**（列表里没有的行不高亮——要一并备料用自动收集）。
      *
      * <p>视图选择与 {@link #getCurrentMissingForAutoCollect()} 完全相同：
-     * GUI 显示行优先（含搜索过滤），没抓到就按 {@code listMode} 实时算（容器 / 全部 / 方块）。
+     * 读 HUD 同源的**实时** filtered 行（容器/全部视图时 {@code materialListAll} 已是当前视图）。
      */
     public static Map<net.minecraft.item.Item, Long> getCurrentViewMissingForHighlight() {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -381,7 +362,7 @@ public class FillMaterialCalculator {
         if (client.player == null || materialList == null) {
             return out;
         }
-        List<MaterialListEntry> rows = currentViewRows(client, materialList).rows();
+        List<MaterialListEntry> rows = hudLiveRows(client, materialList).rows();
         for (MaterialListEntry entry : rows) {
             if (entry == null || entry.getStack().isEmpty()) {
                 continue;
