@@ -361,8 +361,10 @@ public class FillMaterialCalculator {
      * 【高亮材料列表物品】当前视图「还缺的」物品及数量（Ray 2026-11-16：「根据材料列表的视图高亮，
      * 3 个视图不要串」；批次 2 从工具箱迁入）。
      *
-     * <p>口径与材料列表显示一致：**缺失 = 该行总量 − 身上现有**（含盒内一层，同 {@link #countHeldNow}）；
-     * **不展开二级原料**（列表里没有的行不高亮——要一并备料用自动收集）。
+     * <p>口径与材料列表显示一致：**缺失 = 该行总量 − 身上现有**（含盒内一层，同 {@link #countHeldNow}）。
+     * ⭐ v1.20.22（Ray 2026-11-17）：「二级材料也高亮」——例如列表写「平滑石英台阶 ←3 平滑石英块」，
+     * 打开箱子时那 9 个平滑石英块也要闪，不然不知道要收它。二级量走与自动收集**同一套**
+     * `MaterialDemandCore.expand`（阈值、扣富余一致），受「带上二级材料」总开关控制。
      *
      * <p>视图选择与 {@link #getCurrentMissingForAutoCollect()} 完全相同：
      * 读 HUD 同源的**实时** filtered 行（容器/全部视图时 {@code materialListAll} 已是当前视图）。
@@ -383,6 +385,33 @@ public class FillMaterialCalculator {
             int missing = Math.max(0, entry.getCountTotal()) - countHeldNow(client, item);
             if (missing > 0) {
                 out.merge(item, (long) missing, Long::sum);
+            }
+        }
+        // ⭐ v1.20.22：把二级材料也并进高亮表（与自动收集同源；受「带上二级材料」开关控制）
+        if (com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_ENABLED.getBooleanValue()
+                && client.player.networkHandler != null) {
+            try {
+                List<ItemStack> rowsMissing = missingStacksFromRows(rows);
+                if (!rowsMissing.isEmpty()) {
+                    Map<net.minecraft.item.Item, Integer> ownTotals = new java.util.HashMap<>();
+                    for (MaterialListEntry entry : materialList.getMaterialsAll()) {
+                        if (entry == null || entry.getStack().isEmpty()) {
+                            continue;
+                        }
+                        ownTotals.merge(entry.getStack().getItem(), Math.max(0, entry.getCountTotal()), Integer::sum);
+                    }
+                    int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+                    MaterialDemandCore.Result result = MaterialDemandCore.expand(rowsMissing,
+                            buildRecipeSource(client), item -> countHeldNow(client, item),
+                            item -> ownTotals.getOrDefault(item, 0), threshold);
+                    for (MaterialDemandCore.Demand demand : result.demands()) {
+                        if (demand.finalNeed() > 0) {
+                            out.merge(demand.item(), (long) demand.finalNeed(), Long::sum);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+                // 二级折算失败就算了：至少一级高亮还在
             }
         }
         return out;
