@@ -711,9 +711,15 @@ public final class BatchServerLink {
             }
         }
         int looseTaken = collectedItems - beforeLoose;
-        // 第三遍：散装也不够 ⇒ 原地开盒按需取（盒子留容器原位）
+        // 第三遍：散装也不够 ⇒ 原地开盒按需取（盒子留容器原位）。
+        // ⭐ v1.20.24（Ray 2026-11-17）：**先开小盒/半盒，再开满盒**——半盒 29 个能解决时
+        //   不该去拆满盒（拆完满盒变半盒、还多一个半盒）。按「盒内当前需要量」**升序**开。
         int beforeOpen = collectedItems;
-        for (int i : boxSlots) {
+        List<Integer> openOrder = new ArrayList<>(boxSlots);
+        openOrder.sort((a, b) -> Integer.compare(
+                boxWantedTotal(inv.getStack(a), wantedCount),
+                boxWantedTotal(inv.getStack(b), wantedCount)));
+        for (int i : openOrder) {
             if (backpackFull) {
                 break;
             }
