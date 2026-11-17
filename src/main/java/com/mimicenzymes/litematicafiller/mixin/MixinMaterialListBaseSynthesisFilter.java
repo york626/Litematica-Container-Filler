@@ -163,4 +163,27 @@ public abstract class MixinMaterialListBaseSynthesisFilter {
             // 材料列表本体不受影响
         }
     }
+
+    /**
+     * ⭐ v1.20.8-Ray（Ray 2026-11-17：「HUD 的材料列表还是会跳变」）：
+     * **重建出来的 filtered 列表立刻按 GUI 同一个 {@code MaterialListSorter} 排好**。
+     *
+     * <p>原版 {@code MaterialListHudRenderer} 只在**自己每 2 秒的刷新**里
+     * {@code Collections.sort(getMaterialsMissingOnly(true), sorter)}；其余帧直接按
+     * {@code getMaterialsMissingOnly(false)} 的顺序画。可切视图（setMaterialListEntries → 重建 filtered）
+     * 和按提取（{@code getMaterialsMissingOnly(true)}）都会把 filtered 重置成**原始顺序** ⇒
+     * HUD 先按原始顺序画一版，2 秒定时器到了再排序 ⇒ 看起来"跳变"。
+     * 在这里排好序，HUD 任何一帧拿到的都是最终顺序（GUI 本来就会自己再排一次副本，不受影响）。
+     */
+    @Inject(method = "recreateFilteredList", at = @At("RETURN"), remap = false, require = 0)
+    private void raytoolbox$keepFilteredSorted(CallbackInfo ci) {
+        try {
+            if (this.materialListFiltered.size() > 1) {
+                java.util.Collections.sort(this.materialListFiltered,
+                        new fi.dy.masa.litematica.materials.MaterialListSorter((MaterialListBase) (Object) this));
+            }
+        } catch (Throwable ignored) {
+            // 排序失败不影响列表本体
+        }
+    }
 }
