@@ -337,7 +337,9 @@ public class FillMaterialCalculator {
         }
         // v1.20.15（Ray 2026-11-17 定稿）：**搜索框相关改动全部撤回**，自动收集始终按 HUD 实时行。
         ViewRows view = hudLiveRows(client, materialList);
+        long afterRows = System.nanoTime();
         List<ItemStack> out = missingStacksFromRows(view.rows());
+        long afterMissing = System.nanoTime();
         if (out.isEmpty()) {
             return new MaterialDemandCore.AutoCollectResult(List.of(), List.of());
         }
@@ -345,8 +347,13 @@ public class FillMaterialCalculator {
         logAutoCollectDetail(view.path() + "(" + view.rows().size() + "行)", view.rows(), out, client);
         // 判据（v1.20.20）：自动收集耗时（Ray 2026-11-17 报「拿木门要 3~4 秒」）——
         //   正常应在几十 ms 内；若这里上报秒级，看下面的「行数/计划数」判断是配方展开还是行扫描。
-        LOGGER.info("[auto-collect] 计算耗时 {} ms（源行 {}，需求 {} 项，二级计划 {} 条）",
-                (System.nanoTime() - startedAt) / 1_000_000L, view.rows().size(), out.size(), plan.size());
+        long done = System.nanoTime();
+        LOGGER.info("[auto-collect] 计算耗时 {} ms（行 {}｜缺口 {}｜二级 {}｜源行 {}，需求 {} 项，计划 {} 条）",
+                (done - startedAt) / 1_000_000L,
+                (afterRows - startedAt) / 1_000_000L,
+                (afterMissing - afterRows) / 1_000_000L,
+                (done - afterMissing) / 1_000_000L,
+                view.rows().size(), out.size(), plan.size());
         return new MaterialDemandCore.AutoCollectResult(out, plan);
     }
 
@@ -408,14 +415,29 @@ public class FillMaterialCalculator {
                         .append('×').append(stack.getCount()).append(' ');
             }
             // v1.16.27 诊断：两个「自己的总需求」来源各算出来是多少（判断 getMaterialsAll 是否被视图改写）
+            // ⛔ v1.20.21：custom 列表以前在**每个物品**的循环里重建一次（821 次全量重建 ⇒ 卡 3~4 秒），
+            //   现在只建一次、再按 map 查。
             MaterialListBase list = DataManager.getMaterialList();
             if (list != null) {
+                Map<net.minecraft.item.Item, Integer> allTotals = new java.util.HashMap<>();
+                for (MaterialListEntry entry : list.getMaterialsAll()) {
+                    if (entry != null && !entry.getStack().isEmpty()) {
+                        allTotals.merge(entry.getStack().getItem(), Math.max(0, entry.getCountTotal()), Integer::sum);
+                    }
+                }
+                Map<net.minecraft.item.Item, Integer> customTotals = new java.util.HashMap<>();
+                List<MaterialListEntry> customRows = getCustomMaterialList(list);
+                for (MaterialListEntry entry : customRows) {
+                    if (entry != null && !entry.getStack().isEmpty()) {
+                        customTotals.merge(entry.getStack().getItem(), Math.max(0, entry.getCountTotal()), Integer::sum);
+                    }
+                }
                 sb.append("｜素材库：");
                 for (ItemStack stack : out) {
                     net.minecraft.item.Item item = stack.getItem();
                     sb.append(net.minecraft.registry.Registries.ITEM.getId(item).getPath())
-                            .append("{all=").append(totalOf(list.getMaterialsAll(), item))
-                            .append(",custom=").append(totalOf(getCustomMaterialList(list), item)).append("} ");
+                            .append("{all=").append(allTotals.getOrDefault(item, 0))
+                            .append(",custom=").append(customTotals.getOrDefault(item, 0)).append("} ");
                 }
             }
             LOGGER.info(sb.toString());
@@ -567,12 +589,30 @@ public class FillMaterialCalculator {
         }
         MaterialDemandCore.RecipeSource recipeSource = buildRecipeSource(client);
         int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
+        // ⛔ v1.20.21（Ray 2026-11-17「收集要卡 3~4 秒」）：原来 ownTotalDemand 对**每个**需求物品
+        //   都扫一遍整份清单（821 × 1126 次），日志也逐个打 490 行 ⇒ 这里先算一次 map。
+        Map<net.minecraft.item.Item, Integer> ownTotals = new java.util.HashMap<>();
+        MaterialListBase demandList = DataManager.getMaterialList();
+        if (demandList != null) {
+            for (MaterialListEntry entry : demandList.getMaterialsAll()) {
+                if (entry == null || entry.getStack().isEmpty()) {
+                    continue;
+                }
+                ownTotals.merge(entry.getStack().getItem(), Math.max(0, entry.getCountTotal()), Integer::sum);
+            }
+        }
         MaterialDemandCore.Result result = MaterialDemandCore.expand(wanted, recipeSource,
-                item -> countHeldNow(client, item), FillMaterialCalculator::ownTotalDemand, threshold);
+                item -> countHeldNow(client, item), item -> ownTotals.getOrDefault(item, 0), threshold);
+        int logged = 0;
         for (MaterialDemandCore.Demand demand : result.demands()) {
-            LOGGER.info("[auto-collect] 二级 {}：聚合需求 {}｜已有 {}｜自用 {}｜富余 {}｜最终 {}",
-                    net.minecraft.registry.Registries.ITEM.getId(demand.item()).getPath(),
-                    demand.aggregated(), demand.have(), demand.reserved(), demand.spare(), demand.finalNeed());
+            if (logged++ < 20) {
+                LOGGER.info("[auto-collect] 二级 {}：聚合需求 {}｜已有 {}｜自用 {}｜富余 {}｜最终 {}",
+                        net.minecraft.registry.Registries.ITEM.getId(demand.item()).getPath(),
+                        demand.aggregated(), demand.have(), demand.reserved(), demand.spare(), demand.finalNeed());
+            }
+        }
+        if (logged > 20) {
+            LOGGER.info("[auto-collect] 二级明细省略 {} 条（只打前 20 条）", logged - 20);
         }
         // 追加进清单（同物品合并）
         for (ItemStack add : result.additions()) {
