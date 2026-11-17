@@ -186,10 +186,12 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             }
             if (mimic_cachedVanillaList == null) return;
 
+            long calcStart = System.nanoTime();
             if (FillMaterialCalculator.listMode != 0) {
                 FillMaterialCalculator.calculate(this, true, mimic_cachedVanillaList);
                 mimic_needsCalculation = false;
             }
+            int calcMs = (int) ((System.nanoTime() - calcStart) / 1_000_000L);
 
             List<MaterialListEntry> targetList = mimic_buildTargetList();
 
@@ -229,12 +231,31 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             int scroll = mimic_getScrollPosition();
             mimic_refreshWidget();
             mimic_setScrollPosition(scroll);
-            FillMaterialCalculator.logViewDebug("切视图：mode={} 目标={}行｜控件前={}行 刷新后={}行｜列表={}行",
+            FillMaterialCalculator.logViewDebug("切视图：mode={} 目标={}行｜控件前={}行 刷新后={}行｜列表={}行｜计算={}ms",
                     FillMaterialCalculator.listMode, writeBack.size(), widgetBefore,
                     mimic_widgetEntryCount(),
-                    mimic_readMaterialListAll() == null ? -1 : mimic_readMaterialListAll().size());
+                    mimic_readMaterialListAll() == null ? -1 : mimic_readMaterialListAll().size(),
+                    calcMs);
 
         } catch (Exception ignored) {}
+    }
+
+    /** 两批视图行是否「内容相同」（同一物品、同样总量/缺口/已有量）。 */
+    @Unique
+    private static boolean mimic_sameRows(List<MaterialListEntry> a, List<MaterialListEntry> b) {
+        if (a == b) return true;
+        if (a == null || b == null || a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            MaterialListEntry x = a.get(i);
+            MaterialListEntry y = b.get(i);
+            if (x == y) continue;
+            if (x == null || y == null) return false;
+            if (x.getStack().getItem() != y.getStack().getItem()) return false;
+            if (x.getCountTotal() != y.getCountTotal()
+                    || x.getCountMissing() != y.getCountMissing()
+                    || x.getCountAvailable() != y.getCountAvailable()) return false;
+        }
+        return true;
     }
 
     /** 诊断（v1.20.6）：控件当前显示多少行（读 WidgetListBase.listContents）。 */
@@ -324,7 +345,13 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
             if (mimic_needsCalculation) {
                 FillMaterialCalculator.calculate(this, true, mimic_cachedVanillaList);
                 mimic_needsCalculation = false;
-            } else if (!FillMaterialCalculator.hasMissingData) {
+            } else {
+                // ⭐ v1.20.7-Ray（Ray 2026-11-17「切视图时列表跳一下」）：
+                //   以前这里的分支是 `else if (!hasMissingData) return;` —— 只要还有容器没回数据
+                //   （hasMissingData=true），看门狗**每 50ms** 就重建并重写一次列表 + 重建控件
+                //   （诊断日志实测 ~10 条/秒的「控件重建」），列表因此持续抖动。
+                //   现在：只有**重算那一拍**（看门狗每 500ms 的 forceRefresh）才允许往下写；
+                //   其余 tick 直接返回。
                 return;
             }
 
@@ -332,6 +359,12 @@ public abstract class GuiMaterialListMixin extends GuiBase implements MaterialLi
 
             // ⛔ v1.18.1-Ray：视图算出来是空的、但清单里有东西 ⇒ **不覆盖**（等统计/缓存就绪）。
             if (targetList.isEmpty() && !currentRef.isEmpty()) {
+                return;
+            }
+
+            // ⭐ v1.20.7-Ray：内容没有任何变化（同一批物品、同样数量）⇒ 不重写、不重建控件。
+            //   等待容器回包期间即使每 500ms 重算一次，也不会再让列表抖。
+            if (!mimic_forceReplacementRefresh && mimic_sameRows(targetList, mimic_lastInjectedRows)) {
                 return;
             }
 

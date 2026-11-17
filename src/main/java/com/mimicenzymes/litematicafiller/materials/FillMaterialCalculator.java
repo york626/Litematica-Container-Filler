@@ -233,15 +233,17 @@ public class FillMaterialCalculator {
     }
 
     /** 诊断（v1.20.6）：控件真正重建列表的时刻（排查「切视图先闪旧列表」的时序）。 */
-    private static long lastWidgetRebuildLog;
+    private static int lastWidgetSize = -1;
+    private static String lastWidgetFirst = "";
 
     public static void logWidgetRebuild(int size, String first) {
-        long now = System.currentTimeMillis();
-        if (now - lastWidgetRebuildLog < 100L) {
+        // 只在「控件列表内容真的变了」时打一行（以前按时间节流 ⇒ 空转时刷屏）
+        if (size == lastWidgetSize && first.equals(lastWidgetFirst)) {
             return;
         }
-        lastWidgetRebuildLog = now;
-        LOGGER.info("[view-debug] 控件重建：{} 行｜首行={}｜mode={}", size, first, listMode);
+        lastWidgetSize = size;
+        lastWidgetFirst = first;
+        LOGGER.info("[view-debug] 控件列表变化：{} 行｜首行={}｜mode={}", size, first, listMode);
     }
 
     /** 诊断（v1.20.6）：Mixin 里不要放静态 logger（静态初始化不可靠），统一走这里。 */
