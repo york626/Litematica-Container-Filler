@@ -30,8 +30,16 @@ import java.util.Map;
  */
 public final class RecipeChooser {
 
-    /** 选中的配方：单次产量、每格原料（options[0]，同种按格子数合并）、能否互转。 */
-    public record Choice(int outputCount, List<MaterialDemandCore.Ingredient> ingredients, boolean bidirectional) {
+    /**
+     * 选中的配方：单次产量、每格原料（options[0]，同种按格子数合并）、能否互转。
+     *
+     * <p>{@code alternatives} 与 {@code ingredients} **下标一一对应**：每个原料格子可接受的
+     * 全部候选物品（tag 配方如 {@code #minecraft:planks} 会有多个）。
+     * 收集/显示仍用 {@code ingredients}（行为不变）；深层展开按“同树种优先”挑候选
+     * （见 {@code DeepMaterialPlanner}，修「白桦木栅栏门 → 竹子」）。
+     */
+    public record Choice(int outputCount, List<MaterialDemandCore.Ingredient> ingredients,
+                         List<List<Item>> alternatives, boolean bidirectional) {
     }
 
     /**
@@ -67,6 +75,8 @@ public final class RecipeChooser {
                         continue;
                     }
                     Map<Item, Integer> counts = new LinkedHashMap<>();
+                    // 同一下标：该原料格子可接受的全部候选（tag 配方有多个）
+                    Map<Item, java.util.LinkedHashSet<Item>> optionsByItem = new LinkedHashMap<>();
                     boolean unusable = false;
                     int cells = 0;
                     for (Ingredient ingredient : recipe.getIngredients()) {
@@ -88,6 +98,13 @@ public final class RecipeChooser {
                             break;
                         }
                         counts.merge(inputItem, 1, Integer::sum);
+                        java.util.LinkedHashSet<Item> options =
+                                optionsByItem.computeIfAbsent(inputItem, k -> new java.util.LinkedHashSet<>());
+                        for (ItemStack stack : matching) {
+                            if (stack != null && !stack.isEmpty()) {
+                                options.add(stack.getItem());
+                            }
+                        }
                     }
                     if (unusable || counts.isEmpty()) {
                         continue;
@@ -97,12 +114,15 @@ public final class RecipeChooser {
                         continue;
                     }
                     List<MaterialDemandCore.Ingredient> ingredients = new ArrayList<>(counts.size());
+                    List<List<Item>> alternatives = new ArrayList<>(counts.size());
                     for (Map.Entry<Item, Integer> entry : counts.entrySet()) {
                         ingredients.add(new MaterialDemandCore.Ingredient(entry.getKey(), entry.getValue()));
+                        var options = optionsByItem.get(entry.getKey());
+                        alternatives.add(options == null ? List.of(entry.getKey()) : List.copyOf(options));
                     }
                     boolean bidirectional = counts.size() == 1
                             && hasReverseRecipe(counts.keySet().iterator().next(), requiredItem);
-                    candidates.add(new Choice(outputCount, ingredients, bidirectional));
+                    candidates.add(new Choice(outputCount, ingredients, alternatives, bidirectional));
                 } catch (Throwable ignored) {
                     // 单条配方异常不影响其它候选
                 }

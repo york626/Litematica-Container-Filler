@@ -54,7 +54,8 @@ public final class DeepMaterialPlanner {
                        Map<Item, Set<Item>> primaryRaw) {
     }
 
-    private record RecipeStep(int outputCount, List<MaterialDemandCore.Ingredient> ingredients) {
+    private record RecipeStep(int outputCount, List<MaterialDemandCore.Ingredient> ingredients,
+                              List<List<Item>> alternatives) {
     }
 
     private record Demand(Item item, long need, int depth, Set<Item> path, Item origin) {
@@ -117,7 +118,10 @@ public final class DeepMaterialPlanner {
             }
 
             long times = ceilDiv(demand.need(), Math.max(1, step.outputCount()));
-            for (MaterialDemandCore.Ingredient ingredient : step.ingredients()) {
+            List<MaterialDemandCore.Ingredient> ingredients = step.ingredients();
+            List<List<Item>> alternatives = step.alternatives();
+            for (int i = 0; i < ingredients.size(); i++) {
+                MaterialDemandCore.Ingredient ingredient = ingredients.get(i);
                 if (ingredient == null || ingredient.item() == null || ingredient.amount() <= 0) {
                     continue;
                 }
@@ -125,15 +129,21 @@ public final class DeepMaterialPlanner {
                 if (childNeed <= 0) {
                     continue;
                 }
-                if (demand.path().contains(ingredient.item())) {
+                // tag 配方（如 #minecraft:planks）有多个可选物品 ⇒ 优先选与 origin 同树种的
+                // （修 Ray 2026-11-18：白桦木栅栏门 → 竹子 —— 栅栏门本身必须用白桦木板，
+                //   只有木棍那部分允许任意木板，不能让整行来源显示成竹子）
+                List<Item> options = alternatives != null && i < alternatives.size()
+                        ? alternatives.get(i) : null;
+                Item childItem = pickSameWoodFamily(options, ingredient.item(), demand.origin());
+                if (demand.path().contains(childItem)) {
                     // 环：把当前物品当原料收，避免无限递归（例如红石粉 ⇄ 红石块）
                     raw.merge(demand.item(), demand.need(), Long::sum);
                     primaryRaw.computeIfAbsent(demand.origin(), k -> new HashSet<>()).add(demand.item());
                     continue;
                 }
                 Set<Item> path = new HashSet<>(demand.path());
-                path.add(ingredient.item());
-                queue.add(new Demand(ingredient.item(), childNeed, demand.depth() + 1, path, demand.origin()));
+                path.add(childItem);
+                queue.add(new Demand(childItem, childNeed, demand.depth() + 1, path, demand.origin()));
             }
         }
 
@@ -183,19 +193,61 @@ public final class DeepMaterialPlanner {
             Item powder = Registries.ITEM.get(Identifier.of(id.getNamespace(),
                     path.substring(0, path.length() - "_concrete".length()) + "_concrete_powder"));
             if (powder != Items.AIR && powder != item) {
-                return new RecipeStep(1, List.of(new MaterialDemandCore.Ingredient(powder, 1)));
+                return new RecipeStep(1, List.of(new MaterialDemandCore.Ingredient(powder, 1)),
+                        List.of(List.of(powder)));
             }
         }
 
         RecipeChooser.Choice choice = crafting.choose(item);
         if (choice != null && choice.outputCount() > 0 && !choice.ingredients().isEmpty()) {
-            return new RecipeStep(choice.outputCount(), choice.ingredients());
+            return new RecipeStep(choice.outputCount(), choice.ingredients(), choice.alternatives());
         }
         RecipeStep cooked = cooking.get(item);
         if (cooked != null) {
             return cooked;
         }
         return stonecutting.get(item);
+    }
+
+    /** 常见树种前缀（顺序无关；dark_oak 不会被 oak 误判，因为要求 {@code family + "_"} 开头）。 */
+    private static final String[] WOOD_FAMILIES = {
+            "oak", "spruce", "birch", "jungle", "acacia", "dark_oak",
+            "mangrove", "cherry", "bamboo", "crimson", "warped"
+    };
+
+    private static String woodFamily(Item item) {
+        if (item == null) {
+            return null;
+        }
+        String path = Registries.ITEM.getId(item).getPath();
+        for (String family : WOOD_FAMILIES) {
+            if (path.startsWith(family + "_")) {
+                return family;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 在 tag 配方的候选里挑一个与 origin 同树种的；没有同树种就保持默认（options[0]）。
+     *
+     * <p>例：origin = 白桦木栅栏门 ⇒ 木棍配方里的 {@code #minecraft:planks} 选白桦木板
+     * ⇒ 继续展开成白桦原木；而不会选到 tag 里排第一的竹子。
+     */
+    private static Item pickSameWoodFamily(List<Item> options, Item fallback, Item origin) {
+        if (options == null || options.isEmpty()) {
+            return fallback;
+        }
+        String family = woodFamily(origin);
+        if (family == null) {
+            return fallback;
+        }
+        for (Item option : options) {
+            if (family.equals(woodFamily(option))) {
+                return option;
+            }
+        }
+        return fallback;
     }
 
     private static long ceilDiv(long value, long divisor) {
@@ -242,7 +294,8 @@ public final class DeepMaterialPlanner {
             ItemStack[] matching = first.getMatchingStacks();
             if (matching.length == 0 || matching[0] == null || matching[0].isEmpty()) return;
             out.putIfAbsent(result.getItem(), new RecipeStep(1,
-                    List.of(new MaterialDemandCore.Ingredient(matching[0].getItem(), 1))));
+                    List.of(new MaterialDemandCore.Ingredient(matching[0].getItem(), 1)),
+                    List.of(List.of(matching[0].getItem()))));
         } catch (Throwable ignored) {
         }
     }
@@ -265,7 +318,8 @@ public final class DeepMaterialPlanner {
                 ItemStack[] matching = first.getMatchingStacks();
                 if (matching.length == 0 || matching[0] == null || matching[0].isEmpty()) continue;
                 out.putIfAbsent(result.getItem(), new RecipeStep(result.getCount(),
-                        List.of(new MaterialDemandCore.Ingredient(matching[0].getItem(), 1))));
+                        List.of(new MaterialDemandCore.Ingredient(matching[0].getItem(), 1)),
+                        List.of(List.of(matching[0].getItem()))));
             }
         } catch (Throwable ignored) {
         }
