@@ -72,7 +72,7 @@ public final class MaterialScanHudPanel {
         if (scale <= 0.05f) {
             scale = 0.5f;
         }
-        int x = Math.max(4, screenWidth - (int) (PANEL_WIDTH * scale) - 4);
+        int x = 4;
         int y = 4;
         int height = 12 + rows.size() * LINE_HEIGHT;
 
