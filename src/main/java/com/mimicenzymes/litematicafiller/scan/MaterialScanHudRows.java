@@ -184,6 +184,10 @@ public final class MaterialScanHudRows {
     /**
      * 通用原木（橡木代表“任意木板”配方）⇒ 取附近最多的树种；
      * 白桦/丛林/竹块等具体树种 ⇒ 用它自己的名字，绝不跟附近树种变。
+     *
+     * <p>⚠️ 木炭（{@code Items.CHARCOAL}）的载体是**所有原木**（烧任何原木都行），
+     * 显示也要按附近最多的树种走；否则会固定显示成列表里第一个的“橡木原木”
+     * （Ray 2026-11-18 截图：竹林里只有丛林原木，却写“木炭 → 橡木原木 ×101”）。
      */
     private static String displaySource(Item raw, Map<Item, MaterialWatchlist.WatchItem> watchByItem) {
         MaterialWatchlist.WatchItem watch = watchByItem.get(raw);
@@ -193,7 +197,8 @@ public final class MaterialScanHudRows {
         boolean genericLog = raw == net.minecraft.item.Items.OAK_LOG
                 || raw == net.minecraft.item.Items.OAK_WOOD
                 || raw == net.minecraft.item.Items.STRIPPED_OAK_LOG
-                || raw == net.minecraft.item.Items.STRIPPED_OAK_WOOD;
+                || raw == net.minecraft.item.Items.STRIPPED_OAK_WOOD
+                || raw == net.minecraft.item.Items.CHARCOAL;
         if (genericLog) {
             Map<Block, Long> byBlock = NearbyMaterialScanner.lastBlockByBlock();
             Block best = null;
