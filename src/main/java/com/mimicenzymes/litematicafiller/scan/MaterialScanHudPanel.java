@@ -63,29 +63,44 @@ public final class MaterialScanHudPanel {
 
         TextRenderer textRenderer = client.textRenderer;
         int screenWidth = context.getScaledWindowWidth();
-        int x = Math.max(4, screenWidth - PANEL_WIDTH - 4);
+        // 跟 Litematica 的「材料列表HUD缩放比例」一致（Ray 2026-11-18：面板太大，原来是按默认 GUI 缩放画的）
+        float scale = 1.0f;
+        try {
+            scale = (float) fi.dy.masa.litematica.config.Configs.InfoOverlays.MATERIAL_LIST_HUD_SCALE.getDoubleValue();
+        } catch (Throwable ignored) {
+        }
+        if (scale <= 0.05f) {
+            scale = 0.5f;
+        }
+        int x = Math.max(4, screenWidth - (int) (PANEL_WIDTH * scale) - 4);
         int y = 4;
         int height = 12 + rows.size() * LINE_HEIGHT;
 
-        context.fill(x - 4, y - 4, x + PANEL_WIDTH, y + height, 0xB0000000);
-        context.drawTextWithShadow(textRenderer, "附近可补", x, y, 0xFFFFD060);
-        y += 12;
+        var matrices = context.getMatrices();
+        matrices.push();
+        matrices.translate(x, y, 0.0f);
+        matrices.scale(scale, scale, 1.0f);
+
+        context.fill(-4, -4, PANEL_WIDTH, height, 0xB0000000);
+        context.drawTextWithShadow(textRenderer, "附近可补", 0, 0, 0xFFFFD060);
+        int rowY = 12;
 
         for (MaterialListEntry entry : rows) {
             ItemStack stack = entry.getStack();
             if (stack == null || stack.isEmpty()) {
                 continue;
             }
-            context.drawItem(stack, x, y);
+            context.drawItem(stack, 0, rowY);
             String name = stack.getName().getString();
             if (name.length() > 34) {
                 name = name.substring(0, 34) + "…";
             }
-            context.drawTextWithShadow(textRenderer, name, x + 20, y + 4, 0xFFFFFFFF);
+            context.drawTextWithShadow(textRenderer, name, 20, rowY + 4, 0xFFFFFFFF);
             String count = String.valueOf(Math.max(0, entry.getCountMissing()));
             int countWidth = textRenderer.getWidth(count);
-            context.drawTextWithShadow(textRenderer, count, x + PANEL_WIDTH - 8 - countWidth, y + 4, 0xFFFFD060);
-            y += LINE_HEIGHT;
+            context.drawTextWithShadow(textRenderer, count, PANEL_WIDTH - 8 - countWidth, rowY + 4, 0xFFFFD060);
+            rowY += LINE_HEIGHT;
         }
+        matrices.pop();
     }
 }
