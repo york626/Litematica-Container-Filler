@@ -2,6 +2,11 @@ package com.mimicenzymes.litematicafiller.scan;
 
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.config.Hotkeys;
+import com.mimicenzymes.litematicafiller.materials.MaterialListOfflineSampler;
+import com.mimicenzymes.litematicafiller.mixin.MaterialListPlacementAccessor;
+import fi.dy.masa.litematica.data.DataManager;
+import fi.dy.masa.litematica.materials.MaterialListPlacement;
+import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -235,6 +240,9 @@ public final class NearbyMaterialScanner {
         int baseZ = ref.chunkZ() << 4;
         boolean exposedOnly = Configs.MATERIAL_SCAN_EXPOSED_ONLY.getBooleanValue();
         var schematicWorld = SchematicWorldHandler.getSchematicWorld();
+        // ⛔ 只有「投影世界」不够（Ray 2026-11-18：为开 GUI 把放置关掉了 ⇒ schematicWorld 是 null，
+        //    建筑里的白桦又被当成野外资源）。这里再拿材料列表对应的放置，直接读投影数据判断。
+        SchematicPlacement placement = currentSchematicPlacement();
         BlockPos.Mutable mutable = new BlockPos.Mutable();
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
@@ -245,11 +253,17 @@ public final class NearbyMaterialScanner {
                     if (targets == null) {
                         continue;
                     }
-                    // ⛔ 投影世界里有方块 = 已经摆好的建筑，不是可采资源（Ray 2026-11-18：
+                    // ⛔ 投影里有方块 = 已经摆好的建筑，不是可采资源（Ray 2026-11-18：
                     //    附近没白桦，却把建筑里的白桦算成“附近可采”）。
+                    mutable.set(baseX + x, baseY + y, baseZ + z);
                     if (schematicWorld != null) {
-                        mutable.set(baseX + x, baseY + y, baseZ + z);
                         BlockState schematic = schematicWorld.getBlockState(mutable);
+                        if (schematic != null && !schematic.isAir()) {
+                            continue;
+                        }
+                    }
+                    if (placement != null) {
+                        BlockState schematic = MaterialListOfflineSampler.sampleAt(placement, mutable);
                         if (schematic != null && !schematic.isAir()) {
                             continue;
                         }
@@ -264,6 +278,23 @@ public final class NearbyMaterialScanner {
                 }
             }
         }
+    }
+
+    /**
+     * 材料列表当前对应的投影放置（放置关掉时 {@link SchematicWorldHandler} 是 null，只能从这里拿）。
+     *
+     * <p>拿不到（材料列表是 {@code MaterialListAreaAnalyze} 等非放置来源）⇒ {@code null}，
+     * 只靠投影世界判断。
+     */
+    private static SchematicPlacement currentSchematicPlacement() {
+        try {
+            var materialList = DataManager.getMaterialList();
+            if (materialList instanceof MaterialListPlacement placementList) {
+                return ((MaterialListPlacementAccessor) placementList).getPlacement();
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     /** 至少一面接触空气/水 ⇒ 算“暴露”（水下沙子/海边黏土也算）。 */

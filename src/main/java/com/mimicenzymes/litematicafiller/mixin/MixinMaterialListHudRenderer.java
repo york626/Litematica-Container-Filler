@@ -3,11 +3,12 @@ package com.mimicenzymes.litematicafiller.mixin;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.materials.MaterialBreakdownHint;
-import com.mimicenzymes.litematicafiller.scan.MaterialScanHudRows;
+import com.mimicenzymes.litematicafiller.scan.MaterialScanHudAnchor;
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
 import fi.dy.masa.litematica.materials.MaterialListHudRenderer;
 import fi.dy.masa.malilib.gui.GuiBase;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.item.Item;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -17,11 +18,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * **投影二级材料列表显示**（Ray 2026-11-08 命名 + 要的）。
@@ -80,9 +77,32 @@ public abstract class MixinMaterialListHudRenderer {
     /*
      * ⛔ 2026-11-18：这里原来有一个把「附近可补」行插进 HUD 列表的 @Redirect。
      * 实测会与 Litematica 的 render 打架（它每 2 秒重算 + 自己排序，普通帧又复用旧列表），
-     * 表现为 HUD 的两个状态来回跳。已撤掉；改为 MaterialScanHudPanel 在右上角独立绘制，
+     * 表现为 HUD 的两个状态来回跳。已撤掉；改为 MaterialScanHudPanel 在材料列表上方独立绘制，
      * 原材料列表完全不碰。
      */
+
+    /**
+     * 捕获材料列表 HUD 本帧**实际画背景的矩形**（Ray 2026-11-18：面板要贴在清单正上方，
+     * 不能写死屏幕左上角）。
+     *
+     * <p>⚠️ 不能只捕获 {@code render(xOffset, yOffset, ...)} 的参数 —— 那两个是**偏移量**，
+     * 真正的坐标由 render 内部按 {@code INFO_HUD_ALIGNMENT} + 缩放 + 其他 HUD 行高算出来
+     * （{@code RenderUtils.getHudPosY}）。直接拦它最后那次 {@code DrawContext.fill} 才准。
+     */
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V"
+            ),
+            require = 0
+    )
+    private void lcf$captureHudRect(DrawContext context, int x1, int y1, int x2, int y2, int color) {
+        if (color == 0xA0000000) {
+            MaterialScanHudAnchor.set(x1, y1, x2, y2);
+        }
+        context.fill(x1, y1, x2, y2, color);
+    }
 
     /** 「其他行需要本物品」的汇总（只含单向需求）—— 数据与缓存都在 {@link MaterialBreakdownHint}。 */
     @Unique

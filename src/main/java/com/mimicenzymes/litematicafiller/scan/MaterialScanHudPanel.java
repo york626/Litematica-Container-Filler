@@ -17,7 +17,7 @@ import java.util.List;
  * <p>不再修改 Litematica 的材料列表 HUD——它的 {@code render} 会自己排序并复用列表，
  * 任何“替换列表”的做法都会和它的 2 秒重算帧打架、出现两态跳。
  *
- * <p>这里只在屏幕右上角画一块小面板：
+ * <p>这里只在材料列表 HUD 的**正上方**画一块小面板（位置由 {@link MaterialScanHudAnchor} 捕获）：
  * <pre>
  * 附近可补
  * [icon] 白桦木栅栏门 → 白桦原木 ×172   7439
@@ -72,9 +72,19 @@ public final class MaterialScanHudPanel {
         if (scale <= 0.05f) {
             scale = 0.5f;
         }
+        int height = 12 + rows.size() * LINE_HEIGHT;
+        // 贴在材料列表 HUD 正上方（Ray 2026-11-18）：坐标取 Litematica 本帧实际画背景的矩形。
+        // 拿不到（清单关了 / 没有缺料 / 第一帧）才退回左上角。
         int x = 4;
         int y = 4;
-        int height = 12 + rows.size() * LINE_HEIGHT;
+        if (MaterialScanHudAnchor.isFresh()) {
+            // 面板背景从 (-4,-4) 画到 (PANEL_WIDTH,height) ⇒ 原点 x=left+4 时左边缘与清单对齐
+            x = MaterialScanHudAnchor.left() + 4;
+            y = MaterialScanHudAnchor.top() - height - 4;
+            if (y < 4) {
+                y = 4;
+            }
+        }
 
         var matrices = context.getMatrices();
         matrices.push();
