@@ -2,6 +2,7 @@ package com.mimicenzymes.litematicafiller.scan;
 
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.config.Hotkeys;
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -220,6 +221,8 @@ public final class NearbyMaterialScanner {
         int baseY = ref.sectionY() << 4;
         int baseZ = ref.chunkZ() << 4;
         boolean exposedOnly = Configs.MATERIAL_SCAN_EXPOSED_ONLY.getBooleanValue();
+        var schematicWorld = SchematicWorldHandler.getSchematicWorld();
+        BlockPos.Mutable mutable = new BlockPos.Mutable();
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
@@ -228,6 +231,15 @@ public final class NearbyMaterialScanner {
                     List<MaterialWatchlist.WatchItem> targets = blockTargets.get(block);
                     if (targets == null) {
                         continue;
+                    }
+                    // ⛔ 投影世界里有方块 = 已经摆好的建筑，不是可采资源（Ray 2026-11-18：
+                    //    附近没白桦，却把建筑里的白桦算成“附近可采”）。
+                    if (schematicWorld != null) {
+                        mutable.set(baseX + x, baseY + y, baseZ + z);
+                        BlockState schematic = schematicWorld.getBlockState(mutable);
+                        if (schematic != null && !schematic.isAir()) {
+                            continue;
+                        }
                     }
                     if (exposedOnly && !isExposed(client.world, baseX + x, baseY + y, baseZ + z)) {
                         continue;
