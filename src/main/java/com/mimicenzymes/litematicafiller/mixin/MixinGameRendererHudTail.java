@@ -38,5 +38,7 @@ public abstract class MixinGameRendererHudTail {
             return;
         }
         MaterialListHudDrawQueue.flush();
+        // 「附近可补」面板：必须画在材料列表之后、状态效果图标之后（Ray 2026-11-18：被信标图标压住）
+        com.mimicenzymes.litematicafiller.scan.MaterialScanHudPanel.flushDeferred();
     }
 }

@@ -88,9 +88,12 @@ public final class NearbyMaterialScanner {
     private static Map<EntityType<?>, List<MaterialWatchlist.WatchItem>> entityTargets = Map.of();
 
     /** 投影建筑包围盒缓存（1 秒）：放置/材料列表切换时重建。 */
-    private static SchematicPlacement boxesPlacement;
     private static long boxesAt = 0L;
     private static List<fi.dy.masa.litematica.selection.Box> cachedBuildBoxes = List.of();
+    private static int lastLoggedBoxCount = -1;
+    /** 本轮因「在建筑包围盒内」跳过的方块数（诊断：确认排除真的在生效）。 */
+    private static long cycleSkippedBuildBlocks = 0L;
+    private static long lastLoggedSkippedBlocks = -1L;
 
     private NearbyMaterialScanner() {
     }
@@ -187,6 +190,7 @@ public final class NearbyMaterialScanner {
         scanCooldown = 0;
         cycleBlockCounts.clear();
         cycleEntityCounts.clear();
+        cycleSkippedBuildBlocks = 0L;
         centerChunkX = center.getX() >> 4;
         centerChunkZ = center.getZ() >> 4;
         centerSectionY = center.getY() >> 4;
@@ -262,6 +266,7 @@ public final class NearbyMaterialScanner {
                     // ⛔ 投影建筑区域内的方块 = 已经摆好的建筑，不是可采资源。
                     if (!buildBoxes.isEmpty()
                             && insideAnyBox(buildBoxes, baseX + x, baseY + y, baseZ + z)) {
+                        cycleSkippedBuildBlocks++;
                         continue;
                     }
                     mutable.set(baseX + x, baseY + y, baseZ + z);
@@ -301,31 +306,61 @@ public final class NearbyMaterialScanner {
     }
 
     /**
-     * 材料列表当前对应放置的**世界坐标子区域包围盒**（{@code ANY}：不要求放置启用）。
+     * 所有 Litematica 放置的**世界坐标子区域包围盒**（{@code ANY}：不要求放置启用）。
      *
      * <p>用它排除“建筑区内的方块”比逐格采样投影数据稳：盒子由 Litematica 变换过，
      * 旋转/镜像都成立，也不依赖 {@code schematicWorld}（放置关着时它是 null）。
-     * 拿不到材料列表放置（区域分析等）⇒ 空列表，只靠投影世界判断。
+     *
+     * <p>⚠️ v1.21.14：不能只看「材料列表对应的放置」——材料列表可能是
+     * {@code MaterialListSchematic}（没有放置对象），那样一个盒子都拿不到、工地方块又全被算成资源。
+     * 改为**遍历全部放置**；列表对应放置作为兜底。
      */
     private static List<fi.dy.masa.litematica.selection.Box> buildBoxes() {
-        SchematicPlacement placement = currentSchematicPlacement();
-        if (placement == null) {
-            boxesPlacement = null;
-            cachedBuildBoxes = List.of();
-            return cachedBuildBoxes;
-        }
         long now = System.currentTimeMillis();
-        if (placement == boxesPlacement && now - boxesAt < 1000L) {
+        if (now - boxesAt < 1000L) {
             return cachedBuildBoxes;
         }
-        boxesPlacement = placement;
         boxesAt = now;
+
+        List<fi.dy.masa.litematica.selection.Box> boxes = new ArrayList<>();
         try {
-            cachedBuildBoxes = List.copyOf(placement.getSubRegionBoxes(
-                    SubRegionPlacement.RequiredEnabled.ANY).values());
+            var manager = DataManager.getSchematicPlacementManager();
+            if (manager != null) {
+                for (SchematicPlacement placement : manager.getAllSchematicsPlacements()) {
+                    boxes.addAll(placement.getSubRegionBoxes(
+                            SubRegionPlacement.RequiredEnabled.ANY).values());
+                }
+            }
         } catch (Throwable ignored) {
-            cachedBuildBoxes = List.of();
         }
+        if (boxes.isEmpty()) {
+            SchematicPlacement placement = currentSchematicPlacement();
+            if (placement != null) {
+                try {
+                    boxes.addAll(placement.getSubRegionBoxes(
+                            SubRegionPlacement.RequiredEnabled.ANY).values());
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+
+        if (boxes.size() != lastLoggedBoxCount) {
+            lastLoggedBoxCount = boxes.size();
+            if (boxes.isEmpty()) {
+                LOGGER.info("[material-scan] 建筑排除：没有可用的投影放置包围盒（工地方块会被算成资源）");
+            } else {
+                var first = boxes.get(0);
+                LOGGER.info("[material-scan] 建筑排除：{} 个包围盒，首个 x={}..{} y={}..{} z={}..{}",
+                        boxes.size(),
+                        Math.min(first.getPos1().getX(), first.getPos2().getX()),
+                        Math.max(first.getPos1().getX(), first.getPos2().getX()),
+                        Math.min(first.getPos1().getY(), first.getPos2().getY()),
+                        Math.max(first.getPos1().getY(), first.getPos2().getY()),
+                        Math.min(first.getPos1().getZ(), first.getPos2().getZ()),
+                        Math.max(first.getPos1().getZ(), first.getPos2().getZ()));
+            }
+        }
+        cachedBuildBoxes = List.copyOf(boxes);
         return cachedBuildBoxes;
     }
 
@@ -399,11 +434,18 @@ public final class NearbyMaterialScanner {
             LOGGER.info("[material-scan] 一轮完成：{} 种方块、{} 种实体，收尾 {} ms",
                     cycleBlockCounts.size(), cycleEntityCounts.size(), elapsed);
         }
+        // 诊断：排除是否真的生效（数量变化才打，避免每轮刷屏）
+        if (cycleSkippedBuildBlocks != lastLoggedSkippedBlocks) {
+            lastLoggedSkippedBlocks = cycleSkippedBuildBlocks;
+            LOGGER.info("[material-scan] 本轮跳过建筑包围盒内方块 {} 格（附近命中 {} 种）",
+                    cycleSkippedBuildBlocks, cycleBlockCounts.size());
+        }
 
         // 下一轮
         cycleBlockCounts.clear();
         cycleBlockByBlock.clear();
         cycleEntityCounts.clear();
+        cycleSkippedBuildBlocks = 0L;
         sectionCursor = 0;
         // 下一轮会自动 rebuild（sections 不为空、判据不触发 ⇒ 保留列表），但玩家移动后 buildSections 会重建
     }
@@ -472,6 +514,7 @@ public final class NearbyMaterialScanner {
         cycleBlockCounts.clear();
         cycleBlockByBlock.clear();
         cycleEntityCounts.clear();
+        cycleSkippedBuildBlocks = 0L;
         lastBlockCounts = Map.of();
         lastBlockByBlock = Map.of();
         lastEntityCounts = Map.of();

@@ -32,7 +32,27 @@ public final class MaterialScanHudPanel {
     private static final int LINE_HEIGHT = 18;
     private static final int PANEL_WIDTH = 250;
 
+    /** 本帧 HUD 的 DrawContext（在 HudRenderCallback 里存，等 GameRenderer 尾部再画）。 */
+    private static DrawContext pendingContext;
+
     private MaterialScanHudPanel() {
+    }
+
+    /**
+     * 本帧先记账、不画（Ray 2026-11-18：面板要被**信标效果图标压住** ⇒ 必须画在 InGameHud 之后）。
+     * 真正的绘制在 {@link #flushDeferred()}，由 {@code MixinGameRendererHudTail} 在材料列表之后调用。
+     */
+    public static void defer(DrawContext context) {
+        pendingContext = context;
+    }
+
+    /** 在整帧 HUD（含状态效果图标、材料列表）之后画；没有待画内容时什么都不做。 */
+    public static void flushDeferred() {
+        DrawContext context = pendingContext;
+        pendingContext = null;
+        if (context != null) {
+            render(context);
+        }
     }
 
     public static void render(DrawContext context) {
