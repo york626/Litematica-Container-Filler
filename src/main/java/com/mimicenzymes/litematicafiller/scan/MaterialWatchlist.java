@@ -34,13 +34,14 @@ public final class MaterialWatchlist {
     public record WatchItem(Item item, long need, MaterialScanTargets.Target target) {
     }
 
-    public record Snapshot(List<WatchItem> rawItems, List<ItemStack> searchItems, long version) {
+    public record Snapshot(List<WatchItem> rawItems, List<ItemStack> searchItems,
+                           Map<Item, Set<Item>> primaryRaw, long version) {
     }
 
     private static final org.slf4j.Logger LOGGER =
             org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
 
-    private static final Snapshot EMPTY = new Snapshot(List.of(), List.of(), 0);
+    private static final Snapshot EMPTY = new Snapshot(List.of(), List.of(), Map.of(), 0);
 
     private static volatile Snapshot snapshot = EMPTY;
     private static volatile boolean dirty = true;
@@ -98,7 +99,8 @@ public final class MaterialWatchlist {
             }
             rawItems.sort(Comparator.comparingLong(WatchItem::need).reversed());
 
-            snapshot = new Snapshot(List.copyOf(rawItems), List.copyOf(plan.primaryItems()), ++version);
+            snapshot = new Snapshot(List.copyOf(rawItems), List.copyOf(plan.primaryItems()),
+                    plan.primaryRaw(), ++version);
             dirty = false;
             lastRefreshMs = System.currentTimeMillis();
             LOGGER.info("[material-scan] 清单刷新：{} ms｜原料 {} 种、箱子搜索 {} 项（缺料行 {}）",

@@ -3,6 +3,7 @@ package com.mimicenzymes.litematicafiller.mixin;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.materials.MaterialBreakdownHint;
+import com.mimicenzymes.litematicafiller.scan.MaterialScanHudRows;
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
 import fi.dy.masa.litematica.materials.MaterialListHudRenderer;
@@ -16,7 +17,11 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * **投影二级材料列表显示**（Ray 2026-11-08 命名 + 要的）。
@@ -71,6 +76,44 @@ public abstract class MixinMaterialListHudRenderer {
     /** 材料清单本体（要它的 multiplier 才能算出每行的真实需求）。 */
     @Shadow(remap = false)
     protected MaterialListBase materialList;
+
+    /**
+     * HUD 里把「附近能补」的原清单行提到最上面（Ray 2026-11-18）：
+     * 原行用副本 + 行尾 `← 金合欢原木 ×172`，原位置按物品跳过（隐藏重复）。
+     * 只影响 HUD 的绘制列表，不动 materialList 本体、不动 GUI。
+     */
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lfi/dy/masa/litematica/materials/MaterialListBase;" +
+                            "getMaterialsMissingOnly(Z)Ljava/util/List;"
+            ),
+            remap = false,
+            require = 0
+    )
+    private List<MaterialListEntry> raytoolbox$promoteNearby(MaterialListBase self, boolean update) {
+        List<MaterialListEntry> normal = self.getMaterialsMissingOnly(update);
+        if (!Configs.MATERIAL_SCAN_HUD.getBooleanValue() || normal.isEmpty()) {
+            return normal;
+        }
+        List<MaterialListEntry> promoted = MaterialScanHudRows.promoted(normal);
+        if (promoted.isEmpty()) {
+            return normal;
+        }
+        Set<Item> promotedItems = new HashSet<>();
+        for (MaterialListEntry entry : promoted) {
+            promotedItems.add(entry.getStack().getItem());
+        }
+        List<MaterialListEntry> out = new ArrayList<>(promoted.size() + normal.size());
+        out.addAll(promoted);
+        for (MaterialListEntry entry : normal) {
+            if (!promotedItems.contains(entry.getStack().getItem())) {
+                out.add(entry);
+            }
+        }
+        return out;
+    }
 
     /** 「其他行需要本物品」的汇总（只含单向需求）—— 数据与缓存都在 {@link MaterialBreakdownHint}。 */
     @Unique

@@ -312,7 +312,8 @@ public final class MaterialScanTargets {
         return null;
     }
 
-    private static boolean isLogItem(Item item) {
+    /** 是否原木类（含木头/菌柄/竹块），HUD 用来按附近树种显示。 */
+    public static boolean isLogItem(Item item) {
         if (!(item instanceof BlockItem)) {
             return false;
         }

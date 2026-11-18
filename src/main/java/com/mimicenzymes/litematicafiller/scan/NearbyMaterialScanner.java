@@ -66,7 +66,12 @@ public final class NearbyMaterialScanner {
     private static int centerSectionY = Integer.MIN_VALUE;
 
     private static final Map<Item, Long> cycleBlockCounts = new HashMap<>();
+    private static final Map<Block, Long> cycleBlockByBlock = new HashMap<>();
     private static final Map<Item, Long> cycleEntityCounts = new HashMap<>();
+
+    private static volatile Map<Item, Long> lastBlockCounts = Map.of();
+    private static volatile Map<Block, Long> lastBlockByBlock = Map.of();
+    private static volatile Map<Item, Long> lastEntityCounts = Map.of();
 
     private static long targetVersion = -1L;
     private static Map<Block, List<MaterialWatchlist.WatchItem>> blockTargets = Map.of();
@@ -229,6 +234,7 @@ public final class NearbyMaterialScanner {
                     for (MaterialWatchlist.WatchItem target : targets) {
                         cycleBlockCounts.merge(target.item(), 1L, Long::sum);
                     }
+                    cycleBlockByBlock.merge(block, 1L, Long::sum);
                 }
             }
         }
@@ -267,6 +273,9 @@ public final class NearbyMaterialScanner {
 
         Map<Item, Long> nearby = new HashMap<>(cycleBlockCounts);
         cycleEntityCounts.forEach((item, count) -> nearby.merge(item, count, Long::sum));
+        lastBlockCounts = Map.copyOf(cycleBlockCounts);
+        lastBlockByBlock = Map.copyOf(cycleBlockByBlock);
+        lastEntityCounts = Map.copyOf(cycleEntityCounts);
 
         if (Configs.MATERIAL_SCAN_CHAT.getBooleanValue()) {
             long intervalMs = Math.max(2000L, Configs.MATERIAL_SCAN_CHAT_INTERVAL.getIntegerValue() * 50L);
@@ -281,6 +290,7 @@ public final class NearbyMaterialScanner {
 
         // 下一轮
         cycleBlockCounts.clear();
+        cycleBlockByBlock.clear();
         cycleEntityCounts.clear();
         sectionCursor = 0;
         // 下一轮会自动 rebuild（sections 不为空、判据不触发 ⇒ 保留列表），但玩家移动后 buildSections 会重建
@@ -293,6 +303,23 @@ public final class NearbyMaterialScanner {
         return entity instanceof PassiveEntity
                 || entity instanceof SquidEntity
                 || entity instanceof GlowSquidEntity;
+    }
+
+    // ---------------------------------------------------------------- 上一轮结果（HUD / 聊天用）
+
+    /** 最近一轮完成后的「物品 → 附近方块数」。 */
+    public static Map<Item, Long> lastBlockCounts() {
+        return lastBlockCounts;
+    }
+
+    /** 最近一轮完成后的「方块 → 附近数量」（HUD 按附近最多的树种显示“金合欢原木”）。 */
+    public static Map<Block, Long> lastBlockByBlock() {
+        return lastBlockByBlock;
+    }
+
+    /** 最近一轮完成后的「物品 → 附近实体数」。 */
+    public static Map<Item, Long> lastEntityCounts() {
+        return lastEntityCounts;
     }
 
     // ---------------------------------------------------------------- 缓存
@@ -326,7 +353,11 @@ public final class NearbyMaterialScanner {
         centerChunkZ = Integer.MIN_VALUE;
         centerSectionY = Integer.MIN_VALUE;
         cycleBlockCounts.clear();
+        cycleBlockByBlock.clear();
         cycleEntityCounts.clear();
+        lastBlockCounts = Map.of();
+        lastBlockByBlock = Map.of();
+        lastEntityCounts = Map.of();
     }
 
     private static void resetAll() {

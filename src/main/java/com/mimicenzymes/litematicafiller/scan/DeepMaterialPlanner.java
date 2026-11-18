@@ -50,13 +50,14 @@ public final class DeepMaterialPlanner {
     /** 展开上限（Ray：最多 4 层防环）。 */
     public static final int MAX_DEPTH = 4;
 
-    public record Plan(List<ItemStack> primaryItems, Map<Item, Long> rawNeed) {
+    public record Plan(List<ItemStack> primaryItems, Map<Item, Long> rawNeed,
+                       Map<Item, Set<Item>> primaryRaw) {
     }
 
     private record RecipeStep(int outputCount, List<MaterialDemandCore.Ingredient> ingredients) {
     }
 
-    private record Demand(Item item, long need, int depth, Set<Item> path) {
+    private record Demand(Item item, long need, int depth, Set<Item> path, Item origin) {
     }
 
     /** 配方表缓存：同一 manager/world 只建一次烹饪/切石表。 */
@@ -74,9 +75,10 @@ public final class DeepMaterialPlanner {
                             ToIntFunction<Item> available,
                             Set<String> blacklist) {
         Map<Item, Long> raw = new LinkedHashMap<>();
+        Map<Item, Set<Item>> primaryRaw = new LinkedHashMap<>();
         List<ItemStack> primaryItems = new ArrayList<>();
         if (rows == null || rows.isEmpty() || world == null || manager == null) {
-            return new Plan(primaryItems, raw);
+            return new Plan(primaryItems, raw, primaryRaw);
         }
 
         RecipeChooser.Index crafting = RecipeChooser.index(world, manager);
@@ -98,7 +100,7 @@ public final class DeepMaterialPlanner {
 
             Set<Item> path = new HashSet<>();
             path.add(item);
-            queue.add(new Demand(item, missing, 0, path));
+            queue.add(new Demand(item, missing, 0, path, item));
         }
 
         while (!queue.isEmpty()) {
@@ -110,6 +112,7 @@ public final class DeepMaterialPlanner {
 
             if (curated || step == null || demand.depth() >= MAX_DEPTH) {
                 raw.merge(demand.item(), demand.need(), Long::sum);
+                primaryRaw.computeIfAbsent(demand.origin(), k -> new HashSet<>()).add(demand.item());
                 continue;
             }
 
@@ -125,11 +128,12 @@ public final class DeepMaterialPlanner {
                 if (demand.path().contains(ingredient.item())) {
                     // 环：把当前物品当原料收，避免无限递归（例如红石粉 ⇄ 红石块）
                     raw.merge(demand.item(), demand.need(), Long::sum);
+                    primaryRaw.computeIfAbsent(demand.origin(), k -> new HashSet<>()).add(demand.item());
                     continue;
                 }
                 Set<Item> path = new HashSet<>(demand.path());
                 path.add(ingredient.item());
-                queue.add(new Demand(ingredient.item(), childNeed, demand.depth() + 1, path));
+                queue.add(new Demand(ingredient.item(), childNeed, demand.depth() + 1, path, demand.origin()));
             }
         }
 
@@ -146,7 +150,7 @@ public final class DeepMaterialPlanner {
                 out.put(entry.getKey(), need);
             }
         }
-        return new Plan(primaryItems, out);
+        return new Plan(primaryItems, out, primaryRaw);
     }
 
     private static boolean isBlacklisted(Item item, Set<String> blacklist) {
