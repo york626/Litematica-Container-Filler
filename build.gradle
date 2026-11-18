@@ -34,6 +34,9 @@ dependencies {
     modCompileOnly name: 'quickshulker-3.1.0-1.21.1'
     modLocalRuntime name: 'quickshulker-3.1.0-1.21.1'
 
+    // 【野外材料感知】箱子外框：复用 ChestTracker 内嵌的 WhereIsIt 搜索 API（运行期由箱子追踪提供）
+    modCompileOnly name: 'whereisit-2.6.3+1.21.1'
+
     // 【快捷精妙背包提取】精妙背包 / 精妙核心（编译期；运行期由 mods 目录提供）
     modCompileOnly files('libs/sophisticatedbackpacks.jar')
     modCompileOnly files('libs/sophisticatedcore.jar')

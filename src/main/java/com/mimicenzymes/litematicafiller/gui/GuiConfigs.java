@@ -110,12 +110,16 @@ public class GuiConfigs extends GuiConfigsBase {
                 list.add(new ConfigOptionWrapper(Hotkeys.BATCH_TOOL_CANCEL));
             }
             case RENDER -> Configs.RENDER_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
+            case SCAN -> {
+                Configs.SCAN_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
+                list.add(new ConfigOptionWrapper(Hotkeys.MATERIAL_SCAN_TOGGLE));
+            }
             case HOTKEYS -> Hotkeys.HOTKEY_LIST.forEach(h -> list.add(new ConfigOptionWrapper(h)));
         }
         return list;
     }
 
-    public enum Tab { FEATURE, LOGISTICS, DATA, FILTER, TOOLS, BATCH, RENDER, HOTKEYS }
+    public enum Tab { FEATURE, LOGISTICS, DATA, FILTER, TOOLS, BATCH, SCAN, RENDER, HOTKEYS }
 
     private static int getListYForTab() {
         return tab == Tab.RENDER ? LIST_Y_WITH_EXTRA_BUTTON : LIST_Y_COMPACT;

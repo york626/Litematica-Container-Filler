@@ -142,6 +142,28 @@ public class Configs implements IConfigHandler {
     /** L 热键打开材料列表时，强制使用**当前选中放置**的列表（与「配置→原理图放置→材料列表」完全一致）。 */
     public static final ConfigBoolean MATERIAL_LIST_HOTKEY_PLACEMENT           = new ConfigBoolean("litematica_container_filler.config.name.materialListHotkeyPlacement", true, "litematica_container_filler.config.comment.materialListHotkeyPlacement");
 
+    //野外材料感知（2026-11-18：附近缺料扫描 + 聊天提示 + 箱子外框）
+    /** 热键开关（默认关；热键默认未绑定）。 */
+    public static final ConfigBoolean MATERIAL_SCAN_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialScanEnabled", false, "litematica_container_filler.config.comment.materialScanEnabled");
+    /** 扫描半径（格）。 */
+    public static final ConfigInteger MATERIAL_SCAN_RADIUS = new ConfigInteger("litematica_container_filler.config.name.materialScanRadius", 32, 8, 64, "litematica_container_filler.config.comment.materialScanRadius");
+    /** 只看暴露方块（至少一面接触空气/水）；关 = 全 3D 穿透。Ray 2026-11-18 反馈 3D 吵，默认开。 */
+    public static final ConfigBoolean MATERIAL_SCAN_EXPOSED_ONLY = new ConfigBoolean("litematica_container_filler.config.name.materialScanExposedOnly", true, "litematica_container_filler.config.comment.materialScanExposedOnly");
+    /** 材料清单刷新间隔（tick）：200 = 10 秒（Ray 2026-11-18 反馈 MSPT 偏高，先降频）。 */
+    public static final ConfigInteger MATERIAL_SCAN_REFRESH_INTERVAL = new ConfigInteger("litematica_container_filler.config.name.materialScanRefreshInterval", 200, 20, 1200, "litematica_container_filler.config.comment.materialScanRefreshInterval");
+    /** 是否检测实体（只算被动/资源实体）。 */
+    public static final ConfigBoolean MATERIAL_SCAN_ENTITIES = new ConfigBoolean("litematica_container_filler.config.name.materialScanEntities", true, "litematica_container_filler.config.comment.materialScanEntities");
+    /** 是否发聊天提示。 */
+    public static final ConfigBoolean MATERIAL_SCAN_CHAT = new ConfigBoolean("litematica_container_filler.config.name.materialScanChat", true, "litematica_container_filler.config.comment.materialScanChat");
+    /** 聊天提示最小间隔（tick）：200 = 10 秒。 */
+    public static final ConfigInteger MATERIAL_SCAN_CHAT_INTERVAL = new ConfigInteger("litematica_container_filler.config.name.materialScanChatInterval", 200, 20, 1200, "litematica_container_filler.config.comment.materialScanChatInterval");
+    /** 是否自动触发 ChestTracker/WhereIsIt 的箱子外框搜索。Ray 2026-11-18：先放下，默认关。 */
+    public static final ConfigBoolean MATERIAL_SCAN_CHEST_SEARCH = new ConfigBoolean("litematica_container_filler.config.name.materialScanChestSearch", false, "litematica_container_filler.config.comment.materialScanChestSearch");
+    /** 箱子外框搜索间隔（tick）：200 = 10 秒（WhereIsIt 默认 15 秒淡出）。 */
+    public static final ConfigInteger MATERIAL_SCAN_CHEST_INTERVAL = new ConfigInteger("litematica_container_filler.config.name.materialScanChestInterval", 200, 40, 1200, "litematica_container_filler.config.comment.materialScanChestInterval");
+    /** 手动黑名单（物品 ID；聊天 [拉黑] 也能加）。默认空。 */
+    public static final ConfigStringList MATERIAL_SCAN_BLACKLIST = new ConfigStringList("litematica_container_filler.config.name.materialScanBlacklist", ImmutableList.of(), "litematica_container_filler.config.comment.materialScanBlacklist");
+
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
     public static final ConfigBooleanHotkeyed HIGHLIGHT_XRAY        = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightXray", false, "", "litematica_container_filler.config.comment.highlightXray");
@@ -187,6 +209,7 @@ public class Configs implements IConfigHandler {
     public static final List<IConfigBase> FILTER_OPTIONS;
     public static final List<IConfigBase> TOOL_OPTIONS;
     public static final List<IConfigBase> BATCH_OPTIONS;
+    public static final List<IConfigBase> SCAN_OPTIONS;
     public static final List<IConfigBase> RENDER_OPTIONS;
     public static final List<ConfigBooleanHotkeyed> BOOLEAN_HOTKEY_OPTIONS;
     private static final List<IConfigBase> LEGACY_OPTIONS;
@@ -275,6 +298,19 @@ public class Configs implements IConfigHandler {
                 AUTO_COLLECT_SECONDARY_THRESHOLD
         );
 
+        SCAN_OPTIONS = ImmutableList.of(
+                MATERIAL_SCAN_ENABLED,
+                MATERIAL_SCAN_RADIUS,
+                MATERIAL_SCAN_EXPOSED_ONLY,
+                MATERIAL_SCAN_REFRESH_INTERVAL,
+                MATERIAL_SCAN_ENTITIES,
+                MATERIAL_SCAN_CHAT,
+                MATERIAL_SCAN_CHAT_INTERVAL,
+                MATERIAL_SCAN_CHEST_SEARCH,
+                MATERIAL_SCAN_CHEST_INTERVAL,
+                MATERIAL_SCAN_BLACKLIST
+        );
+
         RENDER_OPTIONS = ImmutableList.of(
                 HIGHLIGHT_CONTAINERS,
                 HIGHLIGHT_XRAY,
@@ -343,6 +379,7 @@ public class Configs implements IConfigHandler {
         builder.addAll(FILTER_OPTIONS);
         builder.addAll(TOOL_OPTIONS);
         builder.addAll(BATCH_OPTIONS);
+        builder.addAll(SCAN_OPTIONS);
         builder.addAll(RENDER_OPTIONS);
         OPTIONS = builder.build();
     }

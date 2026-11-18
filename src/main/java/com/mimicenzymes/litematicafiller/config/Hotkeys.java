@@ -21,6 +21,8 @@ public class Hotkeys {
     public static final ConfigHotkey AUTO_COLLECT_TRIGGER = new ConfigHotkey("litematica_container_filler.hotkey.name.autoCollectTrigger", "", "litematica_container_filler.hotkey.comment.autoCollectTrigger");
     /** 【提取二级材料到当前容器】（Ray 2026-11-15 从工具箱移植；默认未绑定）。 */
     public static final ConfigHotkey EXTRACT_SECONDARY_MATERIALS = new ConfigHotkey("litematica_container_filler.hotkey.name.extractSecondaryMaterials", "", "litematica_container_filler.hotkey.comment.extractSecondaryMaterials");
+    /** 【野外材料感知】开关（2026-11-18；默认未绑定，按一下切换）。 */
+    public static final ConfigHotkey MATERIAL_SCAN_TOGGLE = new ConfigHotkey("litematica_container_filler.hotkey.name.materialScanToggle", "", "litematica_container_filler.hotkey.comment.materialScanToggle");
 
     public static final List<ConfigHotkey> HOTKEY_LIST = ImmutableList.of(
             OPEN_CONFIG_GUI,
@@ -34,6 +36,7 @@ public class Hotkeys {
             BATCH_TOOL_TRIGGER,
             BATCH_TOOL_CANCEL,
             AUTO_COLLECT_TRIGGER,
-            EXTRACT_SECONDARY_MATERIALS
+            EXTRACT_SECONDARY_MATERIALS,
+            MATERIAL_SCAN_TOGGLE
     );
 }
