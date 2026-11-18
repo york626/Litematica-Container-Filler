@@ -33,21 +33,32 @@ public final class MaterialScanHudRows {
     private static long cachedKey = Long.MIN_VALUE;
     private static List<MaterialListEntry> cached = List.of();
     private static long cachedCombinedKey = Long.MIN_VALUE;
+    private static long cachedCombinedTick = Long.MIN_VALUE;
     private static List<MaterialListEntry> cachedCombined = List.of();
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
 
     private MaterialScanHudRows() {
     }
 
-    /** 直接把「提前行 + 其余原清单」拼好；内容没变时返回同一个 list 实例，HUD 不重建。 */
+    /** 直接把「提前行 + 其余原清单」拼好；同一 tick 内强制复用同一个 list 实例（HUD 每帧会问两次）。 */
     public static List<MaterialListEntry> combined(List<MaterialListEntry> normal) {
         if (!Configs.MATERIAL_SCAN_HUD.getBooleanValue() || normal == null || normal.isEmpty()) {
             return normal;
         }
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        long tick = client.world == null ? 0L : client.world.getTime();
+        if (cachedCombinedTick == tick && !cachedCombined.isEmpty()) {
+            return cachedCombined;
+        }
         List<MaterialListEntry> promoted = promoted(normal);
         if (promoted.isEmpty()) {
+            cachedCombinedTick = tick;
+            cachedCombined = normal;
             return normal;
         }
         if (cachedCombinedKey == cachedKey && !cachedCombined.isEmpty()) {
+            cachedCombinedTick = tick;
             return cachedCombined;
         }
         Set<Item> promotedItems = new HashSet<>();
@@ -62,7 +73,16 @@ public final class MaterialScanHudRows {
             }
         }
         cachedCombinedKey = cachedKey;
+        cachedCombinedTick = tick;
         cachedCombined = out;
+        StringBuilder detail = new StringBuilder();
+        for (MaterialListEntry entry : promoted) {
+            if (detail.length() > 0) {
+                detail.append(" ｜ ");
+            }
+            detail.append(entry.getStack().getName().getString());
+        }
+        LOGGER.info("[material-scan] HUD 提前 {} 行：{}", promoted.size(), detail);
         return out;
     }
 
