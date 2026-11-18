@@ -50,6 +50,16 @@ public final class DeepMaterialPlanner {
     /** 展开上限（Ray：最多 4 层防环）。 */
     public static final int MAX_DEPTH = 4;
 
+    /**
+     * 扫描展开的**终点**：木棍不再继续展开成“任意木板 → 任意原木”。
+     *
+     * <p>原因（Ray 2026-11-18）：木棍配方用 {@code #minecraft:planks}（任意木板），
+     * 继续展开会把「旗帜 / 栅栏门 / 箭」这类只把木棍当辅料的物品显示成“→ 竹子”，
+     * 看起来像配方错了。木棍本身不是可扫描的方块，停在这里 ⇒ 这些行只有**主料**
+     * （白桦木板、羊毛、燧石…）在附近时才会被提前，来源也不会再出现竹子。
+     */
+    private static final Set<Item> SCAN_TERMINAL = Set.of(Items.STICK);
+
     public record Plan(List<ItemStack> primaryItems, Map<Item, Long> rawNeed,
                        Map<Item, Set<Item>> primaryRaw) {
     }
@@ -109,7 +119,8 @@ public final class DeepMaterialPlanner {
             if (demand.need() <= 0) continue;
 
             RecipeStep step = findStep(demand.item(), crafting, cooking, stonecutting);
-            boolean curated = MaterialScanTargets.isCuratedGatherable(demand.item());
+            boolean curated = MaterialScanTargets.isCuratedGatherable(demand.item())
+                    || SCAN_TERMINAL.contains(demand.item());
 
             if (curated || step == null || demand.depth() >= MAX_DEPTH) {
                 raw.merge(demand.item(), demand.need(), Long::sum);
