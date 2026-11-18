@@ -53,8 +53,12 @@ public final class MaterialScanHudRows {
         }
         List<MaterialListEntry> promoted = promoted(normal);
         if (promoted.isEmpty()) {
-            cachedCombinedTick = tick;
-            cachedCombined = normal;
+            // ⛔ 不要退回原列表：否则 HUD 会在「提前行」和「原列表」两态间跳。
+            // 没数据时短暂复用上一版；只有从来没成功过才用原列表。
+            if (!cachedCombined.isEmpty()) {
+                cachedCombinedTick = tick;
+                return cachedCombined;
+            }
             return normal;
         }
         if (cachedCombinedKey == cachedKey && !cachedCombined.isEmpty()) {

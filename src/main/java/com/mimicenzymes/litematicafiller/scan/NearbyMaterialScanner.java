@@ -58,6 +58,9 @@ public final class NearbyMaterialScanner {
     private static int refreshTimer = 0;
     private static int chestTimer = 0;
     private static int scanCooldown = 0;
+    /** 进世界后先等 40 tick（2 秒）再开始扫描/展开，避免进游戏时抢主线程。 */
+    private static int joinGraceTicks = 0;
+    private static Object lastWorld;
 
     private static List<SectionRef> sections = List.of();
     private static int sectionCursor = 0;
@@ -108,6 +111,16 @@ public final class NearbyMaterialScanner {
 
         if (!Configs.ENABLE_MOD.getBooleanValue() || !Configs.MATERIAL_SCAN_ENABLED.getBooleanValue()) {
             resetCycle();
+            return;
+        }
+
+        // 进世界宽限：前 2 秒不扫描/不展开，避免进游戏卡顿（Ray 2026-11-18）
+        if (client.world != lastWorld) {
+            lastWorld = client.world;
+            joinGraceTicks = 40;
+        }
+        if (joinGraceTicks > 0) {
+            joinGraceTicks--;
             return;
         }
 
