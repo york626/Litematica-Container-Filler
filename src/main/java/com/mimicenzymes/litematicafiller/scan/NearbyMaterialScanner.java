@@ -94,6 +94,10 @@ public final class NearbyMaterialScanner {
     /** 本轮因「在建筑包围盒内」跳过的方块数（诊断：确认排除真的在生效）。 */
     private static long cycleSkippedBuildBlocks = 0L;
     private static long lastLoggedSkippedBlocks = -1L;
+    /** 诊断：本轮原木类命中位置（每种最多 5 个），用于核对“没白桦却有白桦”到底在哪。 */
+    private static final int LOG_SAMPLE_LIMIT = 5;
+    private static final Map<Item, List<BlockPos>> cycleLogPositions = new HashMap<>();
+    private static String lastLoggedLogSamples = "";
 
     private NearbyMaterialScanner() {
     }
@@ -191,6 +195,7 @@ public final class NearbyMaterialScanner {
         cycleBlockCounts.clear();
         cycleEntityCounts.clear();
         cycleSkippedBuildBlocks = 0L;
+        cycleLogPositions.clear();
         centerChunkX = center.getX() >> 4;
         centerChunkZ = center.getZ() >> 4;
         centerSectionY = center.getY() >> 4;
@@ -281,6 +286,13 @@ public final class NearbyMaterialScanner {
                     }
                     for (MaterialWatchlist.WatchItem target : targets) {
                         cycleBlockCounts.merge(target.item(), 1L, Long::sum);
+                        if (MaterialScanTargets.isLogItem(target.item())) {
+                            List<BlockPos> samples = cycleLogPositions.computeIfAbsent(
+                                    target.item(), k -> new ArrayList<>());
+                            if (samples.size() < LOG_SAMPLE_LIMIT) {
+                                samples.add(new BlockPos(baseX + x, baseY + y, baseZ + z));
+                            }
+                        }
                     }
                     cycleBlockByBlock.merge(block, 1L, Long::sum);
                 }
@@ -349,15 +361,25 @@ public final class NearbyMaterialScanner {
             if (boxes.isEmpty()) {
                 LOGGER.info("[material-scan] 建筑排除：没有可用的投影放置包围盒（工地方块会被算成资源）");
             } else {
-                var first = boxes.get(0);
-                LOGGER.info("[material-scan] 建筑排除：{} 个包围盒，首个 x={}..{} y={}..{} z={}..{}",
-                        boxes.size(),
-                        Math.min(first.getPos1().getX(), first.getPos2().getX()),
-                        Math.max(first.getPos1().getX(), first.getPos2().getX()),
-                        Math.min(first.getPos1().getY(), first.getPos2().getY()),
-                        Math.max(first.getPos1().getY(), first.getPos2().getY()),
-                        Math.min(first.getPos1().getZ(), first.getPos2().getZ()),
-                        Math.max(first.getPos1().getZ(), first.getPos2().getZ()));
+                StringBuilder text = new StringBuilder();
+                int shown = 0;
+                for (fi.dy.masa.litematica.selection.Box box : boxes) {
+                    if (shown++ >= 6) {
+                        text.append(" …");
+                        break;
+                    }
+                    if (text.length() > 0) {
+                        text.append(" ｜ ");
+                    }
+                    text.append('[')
+                            .append(Math.min(box.getPos1().getX(), box.getPos2().getX())).append("..")
+                            .append(Math.max(box.getPos1().getX(), box.getPos2().getX())).append(',')
+                            .append(Math.min(box.getPos1().getY(), box.getPos2().getY())).append("..")
+                            .append(Math.max(box.getPos1().getY(), box.getPos2().getY())).append(',')
+                            .append(Math.min(box.getPos1().getZ(), box.getPos2().getZ())).append("..")
+                            .append(Math.max(box.getPos1().getZ(), box.getPos2().getZ())).append(']');
+                }
+                LOGGER.info("[material-scan] 建筑排除：{} 个包围盒 {}", boxes.size(), text);
             }
         }
         cachedBuildBoxes = List.copyOf(boxes);
@@ -440,12 +462,38 @@ public final class NearbyMaterialScanner {
             LOGGER.info("[material-scan] 本轮跳过建筑包围盒内方块 {} 格（附近命中 {} 种）",
                     cycleSkippedBuildBlocks, cycleBlockCounts.size());
         }
+        // 诊断：原木类命中的真实坐标（Ray 2026-11-18：「附近没白桦却显示白桦」）
+        StringBuilder logSamples = new StringBuilder();
+        for (Map.Entry<Item, List<BlockPos>> entry : cycleLogPositions.entrySet()) {
+            long count = cycleBlockCounts.getOrDefault(entry.getKey(), 0L);
+            if (count <= 0) {
+                continue;
+            }
+            if (logSamples.length() > 0) {
+                logSamples.append(" ｜ ");
+            }
+            logSamples.append(entry.getKey().getName().getString()).append(" ×").append(count);
+            for (BlockPos pos : entry.getValue()) {
+                logSamples.append(" (").append(pos.getX()).append(',').append(pos.getY())
+                        .append(',').append(pos.getZ()).append(')');
+            }
+        }
+        if (logSamples.length() > 0) {
+            String signature = logSamples.toString();
+            if (!signature.equals(lastLoggedLogSamples)) {
+                lastLoggedLogSamples = signature;
+                BlockPos center = client.player.getBlockPos();
+                LOGGER.info("[material-scan] 附近原木位置（玩家 {},{},{}）：{}",
+                        center.getX(), center.getY(), center.getZ(), signature);
+            }
+        }
 
         // 下一轮
         cycleBlockCounts.clear();
         cycleBlockByBlock.clear();
         cycleEntityCounts.clear();
         cycleSkippedBuildBlocks = 0L;
+        cycleLogPositions.clear();
         sectionCursor = 0;
         // 下一轮会自动 rebuild（sections 不为空、判据不触发 ⇒ 保留列表），但玩家移动后 buildSections 会重建
     }
@@ -515,6 +563,7 @@ public final class NearbyMaterialScanner {
         cycleBlockByBlock.clear();
         cycleEntityCounts.clear();
         cycleSkippedBuildBlocks = 0L;
+        cycleLogPositions.clear();
         lastBlockCounts = Map.of();
         lastBlockByBlock = Map.of();
         lastEntityCounts = Map.of();
