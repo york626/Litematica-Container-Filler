@@ -97,22 +97,7 @@ public abstract class MixinMaterialListHudRenderer {
         if (!Configs.MATERIAL_SCAN_HUD.getBooleanValue() || normal.isEmpty()) {
             return normal;
         }
-        List<MaterialListEntry> promoted = MaterialScanHudRows.promoted(normal);
-        if (promoted.isEmpty()) {
-            return normal;
-        }
-        Set<Item> promotedItems = new HashSet<>();
-        for (MaterialListEntry entry : promoted) {
-            promotedItems.add(entry.getStack().getItem());
-        }
-        List<MaterialListEntry> out = new ArrayList<>(promoted.size() + normal.size());
-        out.addAll(promoted);
-        for (MaterialListEntry entry : normal) {
-            if (!promotedItems.contains(entry.getStack().getItem())) {
-                out.add(entry);
-            }
-        }
-        return out;
+        return MaterialScanHudRows.combined(normal);
     }
 
     /** 「其他行需要本物品」的汇总（只含单向需求）—— 数据与缓存都在 {@link MaterialBreakdownHint}。 */

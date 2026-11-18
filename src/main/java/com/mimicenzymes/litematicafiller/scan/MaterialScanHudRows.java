@@ -29,13 +29,41 @@ public final class MaterialScanHudRows {
 
     private static final int MAX_ROWS = 6;
 
-    /** 缓存：同一份清单 + 同一轮扫描只重建一次（HUD 每帧会问两次，重建会闪）。 */
-    private static long cachedSnapshotVersion = -1L;
-    private static long cachedCycleVersion = -1L;
-    private static int cachedNormalSize = -1;
+    /** 缓存：按「清单内容 + 附近内容 + 快照版本」判断，内容没变就复用同一批对象（HUD 才不会闪）。 */
+    private static long cachedKey = Long.MIN_VALUE;
     private static List<MaterialListEntry> cached = List.of();
+    private static long cachedCombinedKey = Long.MIN_VALUE;
+    private static List<MaterialListEntry> cachedCombined = List.of();
 
     private MaterialScanHudRows() {
+    }
+
+    /** 直接把「提前行 + 其余原清单」拼好；内容没变时返回同一个 list 实例，HUD 不重建。 */
+    public static List<MaterialListEntry> combined(List<MaterialListEntry> normal) {
+        if (!Configs.MATERIAL_SCAN_HUD.getBooleanValue() || normal == null || normal.isEmpty()) {
+            return normal;
+        }
+        List<MaterialListEntry> promoted = promoted(normal);
+        if (promoted.isEmpty()) {
+            return normal;
+        }
+        if (cachedCombinedKey == cachedKey && !cachedCombined.isEmpty()) {
+            return cachedCombined;
+        }
+        Set<Item> promotedItems = new HashSet<>();
+        for (MaterialListEntry entry : promoted) {
+            promotedItems.add(entry.getStack().getItem());
+        }
+        List<MaterialListEntry> out = new ArrayList<>(promoted.size() + normal.size());
+        out.addAll(promoted);
+        for (MaterialListEntry entry : normal) {
+            if (!promotedItems.contains(entry.getStack().getItem())) {
+                out.add(entry);
+            }
+        }
+        cachedCombinedKey = cachedKey;
+        cachedCombined = out;
+        return out;
     }
 
     /** 返回需要提前的“原清单行”（已复制并改过显示名）；调用方把这些行放最前、原位置跳过。 */
@@ -45,18 +73,35 @@ public final class MaterialScanHudRows {
                 || snapshot == null || snapshot.rawItems().isEmpty()
                 || normal == null || normal.isEmpty()) {
             cached = List.of();
-            return cached;
-        }
-        long cycle = NearbyMaterialScanner.cycleVersion();
-        if (snapshot.version() == cachedSnapshotVersion
-                && cycle == cachedCycleVersion
-                && normal.size() == cachedNormalSize) {
+            cachedKey = Long.MIN_VALUE;
             return cached;
         }
         Map<Item, Long> nearby = new HashMap<>(NearbyMaterialScanner.lastBlockCounts());
         NearbyMaterialScanner.lastEntityCounts().forEach((item, count) -> nearby.merge(item, count, Long::sum));
         if (nearby.isEmpty()) {
-            return List.of();
+            cached = List.of();
+            cachedKey = Long.MIN_VALUE;
+            return cached;
+        }
+
+        long key = snapshot.version();
+        for (MaterialListEntry entry : normal) {
+            if (entry == null || entry.getStack().isEmpty()) {
+                continue;
+            }
+            key = key * 31 + entry.getStack().getItem().hashCode();
+            key = key * 31 + entry.getCountMissing();
+        }
+        for (MaterialWatchlist.WatchItem item : snapshot.rawItems()) {
+            long count = nearby.getOrDefault(item.item(), 0L);
+            if (count <= 0) {
+                continue;
+            }
+            key = key * 31 + item.item().hashCode();
+            key = key * 31 + count;
+        }
+        if (key == cachedKey) {
+            return cached;
         }
 
         Map<Item, MaterialWatchlist.WatchItem> watchByItem = new HashMap<>();
@@ -97,9 +142,7 @@ public final class MaterialScanHudRows {
             }
             promoted.add(withSuffix(entry, source, nearbySum));
         }
-        cachedSnapshotVersion = snapshot.version();
-        cachedCycleVersion = cycle;
-        cachedNormalSize = normal.size();
+        cachedKey = key;
         cached = promoted;
         return promoted;
     }
