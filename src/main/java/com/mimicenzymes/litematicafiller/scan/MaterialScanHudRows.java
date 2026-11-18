@@ -29,6 +29,12 @@ public final class MaterialScanHudRows {
 
     private static final int MAX_ROWS = 6;
 
+    /** 缓存：同一份清单 + 同一轮扫描只重建一次（HUD 每帧会问两次，重建会闪）。 */
+    private static long cachedSnapshotVersion = -1L;
+    private static long cachedCycleVersion = -1L;
+    private static int cachedNormalSize = -1;
+    private static List<MaterialListEntry> cached = List.of();
+
     private MaterialScanHudRows() {
     }
 
@@ -38,7 +44,14 @@ public final class MaterialScanHudRows {
         if (!Configs.MATERIAL_SCAN_HUD.getBooleanValue()
                 || snapshot == null || snapshot.rawItems().isEmpty()
                 || normal == null || normal.isEmpty()) {
-            return List.of();
+            cached = List.of();
+            return cached;
+        }
+        long cycle = NearbyMaterialScanner.cycleVersion();
+        if (snapshot.version() == cachedSnapshotVersion
+                && cycle == cachedCycleVersion
+                && normal.size() == cachedNormalSize) {
+            return cached;
         }
         Map<Item, Long> nearby = new HashMap<>(NearbyMaterialScanner.lastBlockCounts());
         NearbyMaterialScanner.lastEntityCounts().forEach((item, count) -> nearby.merge(item, count, Long::sum));
@@ -84,37 +97,50 @@ public final class MaterialScanHudRows {
             }
             promoted.add(withSuffix(entry, source, nearbySum));
         }
+        cachedSnapshotVersion = snapshot.version();
+        cachedCycleVersion = cycle;
+        cachedNormalSize = normal.size();
+        cached = promoted;
         return promoted;
     }
 
-    /** 行尾加 `← 金合欢原木 ×172`；用副本，绝不改原清单的数据。 */
+    /** 行尾加 `→ 金合欢原木 ×172`；用副本，绝不改原清单的数据。 */
     private static MaterialListEntry withSuffix(MaterialListEntry entry, String source, long nearbyCount) {
         ItemStack stack = entry.getStack().copy();
         String name = stack.getName().getString();
         stack.set(DataComponentTypes.CUSTOM_NAME,
-                Text.literal(name + " ← " + source + " ×" + nearbyCount));
+                Text.literal(name + " → " + source + " ×" + nearbyCount));
         return new MaterialListEntry(stack, entry.getCountTotal(), entry.getCountMissing(),
                 entry.getCountMismatched(), entry.getCountAvailable());
     }
 
-    /** 原木类取附近最多的树种；其它取该原料自己的载体名。 */
+    /**
+     * 通用原木（橡木代表“任意木板”配方）⇒ 取附近最多的树种；
+     * 白桦/丛林/竹块等具体树种 ⇒ 用它自己的名字，绝不跟附近树种变。
+     */
     private static String displaySource(Item raw, Map<Item, MaterialWatchlist.WatchItem> watchByItem) {
         MaterialWatchlist.WatchItem watch = watchByItem.get(raw);
         if (watch == null) {
             return new ItemStack(raw).getName().getString();
         }
-        Map<Block, Long> byBlock = NearbyMaterialScanner.lastBlockByBlock();
-        Block best = null;
-        long bestCount = -1L;
-        for (Block block : watch.target().blocks()) {
-            long count = byBlock.getOrDefault(block, 0L);
-            if (count > bestCount) {
-                best = block;
-                bestCount = count;
+        boolean genericLog = raw == net.minecraft.item.Items.OAK_LOG
+                || raw == net.minecraft.item.Items.OAK_WOOD
+                || raw == net.minecraft.item.Items.STRIPPED_OAK_LOG
+                || raw == net.minecraft.item.Items.STRIPPED_OAK_WOOD;
+        if (genericLog) {
+            Map<Block, Long> byBlock = NearbyMaterialScanner.lastBlockByBlock();
+            Block best = null;
+            long bestCount = -1L;
+            for (Block block : watch.target().blocks()) {
+                long count = byBlock.getOrDefault(block, 0L);
+                if (count > bestCount) {
+                    best = block;
+                    bestCount = count;
+                }
             }
-        }
-        if (best != null && bestCount > 0L && MaterialScanTargets.isLogItem(raw)) {
-            return new ItemStack(best.asItem()).getName().getString();
+            if (best != null && bestCount > 0L) {
+                return new ItemStack(best.asItem()).getName().getString();
+            }
         }
         return watch.target().source();
     }

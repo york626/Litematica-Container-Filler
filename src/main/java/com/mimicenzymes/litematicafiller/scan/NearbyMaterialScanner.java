@@ -72,6 +72,7 @@ public final class NearbyMaterialScanner {
     private static volatile Map<Item, Long> lastBlockCounts = Map.of();
     private static volatile Map<Block, Long> lastBlockByBlock = Map.of();
     private static volatile Map<Item, Long> lastEntityCounts = Map.of();
+    private static volatile long cycleVersion = 0L;
 
     private static long targetVersion = -1L;
     private static Map<Block, List<MaterialWatchlist.WatchItem>> blockTargets = Map.of();
@@ -276,6 +277,7 @@ public final class NearbyMaterialScanner {
         lastBlockCounts = Map.copyOf(cycleBlockCounts);
         lastBlockByBlock = Map.copyOf(cycleBlockByBlock);
         lastEntityCounts = Map.copyOf(cycleEntityCounts);
+        cycleVersion++;
 
         if (Configs.MATERIAL_SCAN_CHAT.getBooleanValue()) {
             long intervalMs = Math.max(2000L, Configs.MATERIAL_SCAN_CHAT_INTERVAL.getIntegerValue() * 50L);
@@ -320,6 +322,11 @@ public final class NearbyMaterialScanner {
     /** 最近一轮完成后的「物品 → 附近实体数」。 */
     public static Map<Item, Long> lastEntityCounts() {
         return lastEntityCounts;
+    }
+
+    /** 轮次版本：HUD 用它做缓存，避免每帧重建 promoted 行导致闪烁。 */
+    public static long cycleVersion() {
+        return cycleVersion;
     }
 
     // ---------------------------------------------------------------- 缓存

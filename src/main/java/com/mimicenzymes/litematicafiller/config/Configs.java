@@ -155,8 +155,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean MATERIAL_SCAN_ENTITIES = new ConfigBoolean("litematica_container_filler.config.name.materialScanEntities", true, "litematica_container_filler.config.comment.materialScanEntities");
     /** 是否发聊天提示（Ray 2026-11-18：默认改 HUD，聊天关）。 */
     public static final ConfigBoolean MATERIAL_SCAN_CHAT = new ConfigBoolean("litematica_container_filler.config.name.materialScanChat", false, "litematica_container_filler.config.comment.materialScanChat");
-    /** 是否在材料列表 HUD 顶部提前“附近能补”的行（默认开）。 */
-    public static final ConfigBoolean MATERIAL_SCAN_HUD = new ConfigBoolean("litematica_container_filler.config.name.materialScanHud", true, "litematica_container_filler.config.comment.materialScanHud");
+    /** 是否在材料列表 HUD 顶部提前“附近能补”的行（Ray 2026-11-18：默认关，开工时打开）。 */
+    public static final ConfigBoolean MATERIAL_SCAN_HUD = new ConfigBoolean("litematica_container_filler.config.name.materialScanHud", false, "litematica_container_filler.config.comment.materialScanHud");
     /** 聊天提示最小间隔（tick）：200 = 10 秒。 */
     public static final ConfigInteger MATERIAL_SCAN_CHAT_INTERVAL = new ConfigInteger("litematica_container_filler.config.name.materialScanChatInterval", 200, 20, 1200, "litematica_container_filler.config.comment.materialScanChatInterval");
     /** 聊天汇总里，某来源合计缺口低于此值就不显示（默认 16，过滤 1~2 个的展示样品）。 */

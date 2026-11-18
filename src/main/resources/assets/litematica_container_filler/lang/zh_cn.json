@@ -483,7 +483,7 @@
   "litematica_container_filler.config.name.materialScanChat": "聊天提示",
   "litematica_container_filler.config.comment.materialScanChat": "在聊天框显示附近可采材料 + 还缺数量 + [拉黑] 按钮。Ray 2026-11-18 起默认关（改看 HUD 提前行）；想临时用聊天提示再打开。",
   "litematica_container_filler.config.name.materialScanHud": "HUD 材料列表提前附近可补的行",
-  "litematica_container_filler.config.comment.materialScanHud": "在 Litematica 材料列表 HUD 顶部，把原清单里「附近有原料可补」的行提前，并在行尾标 `← 金合欢原木 ×172`；原位置不再重复（隐藏重复）。原木按附近数量最多的树种显示；默认最多 6 行；GUI 不变。",
+  "litematica_container_filler.config.comment.materialScanHud": "默认关（开工时打开）。打开后：在 Litematica 材料列表 HUD 顶部，把原清单里「附近有原料可补」的行提前，行尾显示 `→ 金合欢原木 ×172`；原位置不再重复。只有橡木代表“任意原木”会跟附近树种变；白桦/丛林/竹块等具体树种用自己的名字。最多 6 行；GUI 不变。",
   "litematica_container_filler.config.name.materialScanChatInterval": "聊天提示最小间隔（tick）",
   "litematica_container_filler.config.comment.materialScanChatInterval": "同一批材料至少间隔多久再提示；200 = 10 秒。只在内容变化时发。",
   "litematica_container_filler.config.name.materialScanMinNeed": "聊天汇总最小缺口",

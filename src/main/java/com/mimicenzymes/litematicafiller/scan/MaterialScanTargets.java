@@ -300,9 +300,10 @@ public final class MaterialScanTargets {
         if (target != null) {
             return target;
         }
-        // 原木类：材料列表里“任意木板”的通用配方会落到某一个具体树种（通常橡木），
-        // 但玩家在热带草原看到的金合欢同样是有效来源 ⇒ 统一归成“原木”，所有自然原木都算。
-        if (isLogItem(item)) {
+        // 通用「任意木板/任意原木」配方在 RecipeChooser 里落到橡木 ⇒ 只有橡木代表“任意原木”，
+        // 按附近最多树种显示；白桦/丛林/竹块等具体树种必须用自己的方块，不能跟着变。
+        if (item == Items.OAK_LOG || item == Items.OAK_WOOD
+                || item == Items.STRIPPED_OAK_LOG || item == Items.STRIPPED_OAK_WOOD) {
             return new Target("原木", List.copyOf(NATURAL_LOGS), List.of());
         }
         if (item instanceof BlockItem blockItem) {
