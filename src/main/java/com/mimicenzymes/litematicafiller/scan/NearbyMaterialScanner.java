@@ -259,9 +259,23 @@ public final class NearbyMaterialScanner {
         //    盒内的方块一律不算野外资源 —— 对旋转/镜像也成立（盒子已由 Litematica 变换过）。
         List<fi.dy.masa.litematica.selection.Box> buildBoxes = buildBoxes();
         BlockPos.Mutable mutable = new BlockPos.Mutable();
+        int radius = Configs.MATERIAL_SCAN_RADIUS.getIntegerValue();
+        long radiusSq = (long) radius * radius;
+        BlockPos center = client.player.getBlockPos();
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
+                    int wx = baseX + x;
+                    int wy = baseY + y;
+                    int wz = baseZ + z;
+                    // 32 格按**球形**算（Ray 2026-11-18：cube 会扫到角落 40+ 格外的白桦树，
+                    // 用户在小地图上/视野里看不到，却被当成“附近可补”）。
+                    long dx = wx - center.getX();
+                    long dy = wy - center.getY();
+                    long dz = wz - center.getZ();
+                    if (dx * dx + dy * dy + dz * dz > radiusSq) {
+                        continue;
+                    }
                     BlockState state = section.getBlockState(x, y, z);
                     Block block = state.getBlock();
                     List<MaterialWatchlist.WatchItem> targets = blockTargets.get(block);
@@ -270,18 +284,18 @@ public final class NearbyMaterialScanner {
                     }
                     // ⛔ 投影建筑区域内的方块 = 已经摆好的建筑，不是可采资源。
                     if (!buildBoxes.isEmpty()
-                            && insideAnyBox(buildBoxes, baseX + x, baseY + y, baseZ + z)) {
+                            && insideAnyBox(buildBoxes, wx, wy, wz)) {
                         cycleSkippedBuildBlocks++;
                         continue;
                     }
-                    mutable.set(baseX + x, baseY + y, baseZ + z);
+                    mutable.set(wx, wy, wz);
                     if (schematicWorld != null) {
                         BlockState schematic = schematicWorld.getBlockState(mutable);
                         if (schematic != null && !schematic.isAir()) {
                             continue;
                         }
                     }
-                    if (exposedOnly && !isExposed(client.world, baseX + x, baseY + y, baseZ + z)) {
+                    if (exposedOnly && !isExposed(client.world, wx, wy, wz)) {
                         continue;
                     }
                     for (MaterialWatchlist.WatchItem target : targets) {
@@ -290,7 +304,7 @@ public final class NearbyMaterialScanner {
                             List<BlockPos> samples = cycleLogPositions.computeIfAbsent(
                                     target.item(), k -> new ArrayList<>());
                             if (samples.size() < LOG_SAMPLE_LIMIT) {
-                                samples.add(new BlockPos(baseX + x, baseY + y, baseZ + z));
+                                samples.add(new BlockPos(wx, wy, wz));
                             }
                         }
                     }
@@ -428,7 +442,12 @@ public final class NearbyMaterialScanner {
             cycleEntityCounts.clear();
             double radius = Configs.MATERIAL_SCAN_RADIUS.getIntegerValue();
             Box box = client.player.getBoundingBox().expand(radius);
+            double radiusSq = (double) radius * radius;
             for (Entity entity : client.world.getEntitiesByClass(Entity.class, box, NearbyMaterialScanner::isResourceEntity)) {
+                // 与方块一致：按球形距离，避免把 cube 角落 40+ 格外的实体算进“附近”
+                if (entity.squaredDistanceTo(client.player) > radiusSq) {
+                    continue;
+                }
                 List<MaterialWatchlist.WatchItem> targets = entityTargets.get(entity.getType());
                 if (targets == null) {
                     continue;
