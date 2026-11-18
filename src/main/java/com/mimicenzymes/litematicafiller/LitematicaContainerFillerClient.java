@@ -44,6 +44,9 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
         // 【野外材料感知】附近缺料扫描 + 聊天提示 + 箱子外框（Ray 2026-11-18 P1）
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.scan.NearbyMaterialScanner.tick(client));
         com.mimicenzymes.litematicafiller.scan.MaterialScanCommand.register();
+        // 独立 HUD 面板（不碰 Litematica 材料列表本体，避免两态打架）
+        net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback.EVENT.register(
+                (context, tickCounter) -> com.mimicenzymes.litematicafiller.scan.MaterialScanHudPanel.render(context));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!isGuiAutoRegistered) {

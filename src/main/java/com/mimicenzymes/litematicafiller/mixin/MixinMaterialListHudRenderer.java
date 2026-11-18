@@ -77,28 +77,12 @@ public abstract class MixinMaterialListHudRenderer {
     @Shadow(remap = false)
     protected MaterialListBase materialList;
 
-    /**
-     * HUD 里把「附近能补」的原清单行提到最上面（Ray 2026-11-18）：
-     * 原行用副本 + 行尾 `← 金合欢原木 ×172`，原位置按物品跳过（隐藏重复）。
-     * 只影响 HUD 的绘制列表，不动 materialList 本体、不动 GUI。
+    /*
+     * ⛔ 2026-11-18：这里原来有一个把「附近可补」行插进 HUD 列表的 @Redirect。
+     * 实测会与 Litematica 的 render 打架（它每 2 秒重算 + 自己排序，普通帧又复用旧列表），
+     * 表现为 HUD 的两个状态来回跳。已撤掉；改为 MaterialScanHudPanel 在右上角独立绘制，
+     * 原材料列表完全不碰。
      */
-    @Redirect(
-            method = "render",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lfi/dy/masa/litematica/materials/MaterialListBase;" +
-                            "getMaterialsMissingOnly(Z)Ljava/util/List;"
-            ),
-            remap = false,
-            require = 0
-    )
-    private List<MaterialListEntry> raytoolbox$promoteNearby(MaterialListBase self, boolean update) {
-        List<MaterialListEntry> normal = self.getMaterialsMissingOnly(update);
-        if (!Configs.MATERIAL_SCAN_HUD.getBooleanValue() || normal.isEmpty()) {
-            return normal;
-        }
-        return MaterialScanHudRows.combined(normal);
-    }
 
     /** 「其他行需要本物品」的汇总（只含单向需求）—— 数据与缓存都在 {@link MaterialBreakdownHint}。 */
     @Unique
