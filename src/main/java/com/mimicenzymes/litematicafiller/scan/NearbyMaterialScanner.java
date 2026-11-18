@@ -2,11 +2,11 @@ package com.mimicenzymes.litematicafiller.scan;
 
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.config.Hotkeys;
-import com.mimicenzymes.litematicafiller.materials.MaterialListOfflineSampler;
 import com.mimicenzymes.litematicafiller.mixin.MaterialListPlacementAccessor;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.materials.MaterialListPlacement;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
+import fi.dy.masa.litematica.schematic.placement.SubRegionPlacement;
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -86,6 +86,11 @@ public final class NearbyMaterialScanner {
     private static long targetVersion = -1L;
     private static Map<Block, List<MaterialWatchlist.WatchItem>> blockTargets = Map.of();
     private static Map<EntityType<?>, List<MaterialWatchlist.WatchItem>> entityTargets = Map.of();
+
+    /** 投影建筑包围盒缓存（1 秒）：放置/材料列表切换时重建。 */
+    private static SchematicPlacement boxesPlacement;
+    private static long boxesAt = 0L;
+    private static List<fi.dy.masa.litematica.selection.Box> cachedBuildBoxes = List.of();
 
     private NearbyMaterialScanner() {
     }
@@ -241,8 +246,9 @@ public final class NearbyMaterialScanner {
         boolean exposedOnly = Configs.MATERIAL_SCAN_EXPOSED_ONLY.getBooleanValue();
         var schematicWorld = SchematicWorldHandler.getSchematicWorld();
         // ⛔ 只有「投影世界」不够（Ray 2026-11-18：为开 GUI 把放置关掉了 ⇒ schematicWorld 是 null，
-        //    建筑里的白桦又被当成野外资源）。这里再拿材料列表对应的放置，直接读投影数据判断。
-        SchematicPlacement placement = currentSchematicPlacement();
+        //    建筑里的白桦又被当成野外资源）。这里再拿材料列表对应放置的**世界坐标包围盒**（ANY 不要求启用），
+        //    盒内的方块一律不算野外资源 —— 对旋转/镜像也成立（盒子已由 Litematica 变换过）。
+        List<fi.dy.masa.litematica.selection.Box> buildBoxes = buildBoxes();
         BlockPos.Mutable mutable = new BlockPos.Mutable();
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
@@ -253,17 +259,14 @@ public final class NearbyMaterialScanner {
                     if (targets == null) {
                         continue;
                     }
-                    // ⛔ 投影里有方块 = 已经摆好的建筑，不是可采资源（Ray 2026-11-18：
-                    //    附近没白桦，却把建筑里的白桦算成“附近可采”）。
+                    // ⛔ 投影建筑区域内的方块 = 已经摆好的建筑，不是可采资源。
+                    if (!buildBoxes.isEmpty()
+                            && insideAnyBox(buildBoxes, baseX + x, baseY + y, baseZ + z)) {
+                        continue;
+                    }
                     mutable.set(baseX + x, baseY + y, baseZ + z);
                     if (schematicWorld != null) {
                         BlockState schematic = schematicWorld.getBlockState(mutable);
-                        if (schematic != null && !schematic.isAir()) {
-                            continue;
-                        }
-                    }
-                    if (placement != null) {
-                        BlockState schematic = MaterialListOfflineSampler.sampleAt(placement, mutable);
                         if (schematic != null && !schematic.isAir()) {
                             continue;
                         }
@@ -295,6 +298,57 @@ public final class NearbyMaterialScanner {
         } catch (Throwable ignored) {
         }
         return null;
+    }
+
+    /**
+     * 材料列表当前对应放置的**世界坐标子区域包围盒**（{@code ANY}：不要求放置启用）。
+     *
+     * <p>用它排除“建筑区内的方块”比逐格采样投影数据稳：盒子由 Litematica 变换过，
+     * 旋转/镜像都成立，也不依赖 {@code schematicWorld}（放置关着时它是 null）。
+     * 拿不到材料列表放置（区域分析等）⇒ 空列表，只靠投影世界判断。
+     */
+    private static List<fi.dy.masa.litematica.selection.Box> buildBoxes() {
+        SchematicPlacement placement = currentSchematicPlacement();
+        if (placement == null) {
+            boxesPlacement = null;
+            cachedBuildBoxes = List.of();
+            return cachedBuildBoxes;
+        }
+        long now = System.currentTimeMillis();
+        if (placement == boxesPlacement && now - boxesAt < 1000L) {
+            return cachedBuildBoxes;
+        }
+        boxesPlacement = placement;
+        boxesAt = now;
+        try {
+            cachedBuildBoxes = List.copyOf(placement.getSubRegionBoxes(
+                    SubRegionPlacement.RequiredEnabled.ANY).values());
+        } catch (Throwable ignored) {
+            cachedBuildBoxes = List.of();
+        }
+        return cachedBuildBoxes;
+    }
+
+    /** 世界坐标是否落在任一子区域盒内（pos1/pos2 为闭区间）。 */
+    private static boolean insideAnyBox(List<fi.dy.masa.litematica.selection.Box> boxes,
+                                        int x, int y, int z) {
+        for (var box : boxes) {
+            BlockPos p1 = box.getPos1();
+            BlockPos p2 = box.getPos2();
+            if (p1 == null || p2 == null) {
+                continue;
+            }
+            int minX = Math.min(p1.getX(), p2.getX());
+            int maxX = Math.max(p1.getX(), p2.getX());
+            int minY = Math.min(p1.getY(), p2.getY());
+            int maxY = Math.max(p1.getY(), p2.getY());
+            int minZ = Math.min(p1.getZ(), p2.getZ());
+            int maxZ = Math.max(p1.getZ(), p2.getZ());
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 至少一面接触空气/水 ⇒ 算“暴露”（水下沙子/海边黏土也算）。 */

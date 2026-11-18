@@ -62,7 +62,6 @@ public final class MaterialScanHudPanel {
         }
 
         TextRenderer textRenderer = client.textRenderer;
-        int screenWidth = context.getScaledWindowWidth();
         // 跟 Litematica 的「材料列表HUD缩放比例」一致（Ray 2026-11-18：面板太大，原来是按默认 GUI 缩放画的）
         float scale = 1.0f;
         try {
@@ -78,9 +77,10 @@ public final class MaterialScanHudPanel {
         int x = 4;
         int y = 4;
         if (MaterialScanHudAnchor.isFresh()) {
-            // 面板背景从 (-4,-4) 画到 (PANEL_WIDTH,height) ⇒ 原点 x=left+4 时左边缘与清单对齐
+            // 面板背景从 (-4,-4) 画到 (PANEL_WIDTH,height)：
+            // 先 scale 再 translate ⇒ 原点 (x,y) 也是**缩放前**坐标，与 anchor 同一坐标系。
             x = MaterialScanHudAnchor.left() + 4;
-            y = MaterialScanHudAnchor.top() - height - 4;
+            y = MaterialScanHudAnchor.top() - height;
             if (y < 4) {
                 y = 4;
             }
@@ -88,8 +88,11 @@ public final class MaterialScanHudPanel {
 
         var matrices = context.getMatrices();
         matrices.push();
-        matrices.translate(x, y, 0.0f);
+        // ⛔ 顺序必须是先 scale 再 translate：Litematica 的 posX/posY 是缩放前坐标
+        //    （它 scale 之后直接 fill(posX,...)）；先 translate 会把我们的坐标当屏幕像素用，
+        //    面板就会掉进材料列表里面、被后画的清单压住（Ray 2026-11-18 实测）。
         matrices.scale(scale, scale, 1.0f);
+        matrices.translate(x, y, 0.0f);
 
         context.fill(-4, -4, PANEL_WIDTH, height, 0xB0000000);
         context.drawTextWithShadow(textRenderer, "附近可补", 0, 0, 0xFFFFD060);
