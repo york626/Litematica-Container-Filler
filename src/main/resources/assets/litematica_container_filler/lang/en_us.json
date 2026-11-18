@@ -482,6 +482,8 @@
   "litematica_container_filler.config.comment.materialScanChat": "Prints nearby gatherable materials + remaining need + a [Blacklist] button in chat. Off: only the chest outline search remains.",
   "litematica_container_filler.config.name.materialScanChatInterval": "Chat Hint Interval (ticks)",
   "litematica_container_filler.config.comment.materialScanChatInterval": "Minimum interval between hints for the same set of materials; 200 = 10 seconds. Only sends when the content changes.",
+  "litematica_container_filler.config.name.materialScanMinNeed": "Chat Summary Minimum Need",
+  "litematica_container_filler.config.comment.materialScanMinNeed": "A source (logs/gravel/cow...) whose summed missing need is below this is not shown in chat, which filters out the 1-2 item display samples. Default 16; 0 = no filter. Use the GUI material list for the full detail.",
   "litematica_container_filler.config.name.materialScanChestSearch": "Auto-Search Chests With Missing Materials (outline)",
   "litematica_container_filler.config.comment.materialScanChestSearch": "Reuses ChestTracker's click-an-item behavior: feeds the missing list to the embedded WhereIsIt search, so opened chests containing missing materials get an outline (through walls, ~15s fade). Requires Chest Tracker; without it only chat hints remain.",
   "litematica_container_filler.config.name.materialScanChestInterval": "Chest Outline Search Interval (ticks)",

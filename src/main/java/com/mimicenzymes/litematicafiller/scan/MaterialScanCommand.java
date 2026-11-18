@@ -44,41 +44,53 @@ public final class MaterialScanCommand {
     }
 
     private static int add(FabricClientCommandSource source, String raw) {
-        String id = normalize(raw);
-        if (id == null) {
+        List<String> ids = normalizeMany(raw);
+        if (ids == null) {
             source.sendError(Text.literal("无效物品 ID：" + raw));
             return 0;
         }
         List<String> strings = new ArrayList<>(Configs.MATERIAL_SCAN_BLACKLIST.getStrings());
-        if (strings.contains(id)) {
-            source.sendFeedback(Text.literal(id + " 已在黑名单"));
+        int added = 0;
+        for (String id : ids) {
+            if (!strings.contains(id)) {
+                strings.add(id);
+                added++;
+            }
+        }
+        if (added == 0) {
+            source.sendFeedback(Text.literal("已在黑名单：" + String.join(", ", ids)));
             return 1;
         }
-        strings.add(id);
         Configs.MATERIAL_SCAN_BLACKLIST.setStrings(strings);
         Configs.MATERIAL_SCAN_BLACKLIST.setModified();
         Configs.saveToFile();
         MaterialWatchlist.markDirty();
-        source.sendFeedback(Text.literal("已拉黑 " + id + "（野外扫描 / 箱子搜索都不再提示）"));
+        source.sendFeedback(Text.literal("已拉黑 " + added + " 种：" + String.join(", ", ids)));
         return 1;
     }
 
     private static int remove(FabricClientCommandSource source, String raw) {
-        String id = normalize(raw);
-        if (id == null) {
+        List<String> ids = normalizeMany(raw);
+        if (ids == null) {
             source.sendError(Text.literal("无效物品 ID：" + raw));
             return 0;
         }
         List<String> strings = new ArrayList<>(Configs.MATERIAL_SCAN_BLACKLIST.getStrings());
-        if (!strings.remove(id)) {
-            source.sendFeedback(Text.literal(id + " 不在黑名单"));
+        int removed = 0;
+        for (String id : ids) {
+            if (strings.remove(id)) {
+                removed++;
+            }
+        }
+        if (removed == 0) {
+            source.sendFeedback(Text.literal("不在黑名单：" + String.join(", ", ids)));
             return 1;
         }
         Configs.MATERIAL_SCAN_BLACKLIST.setStrings(strings);
         Configs.MATERIAL_SCAN_BLACKLIST.setModified();
         Configs.saveToFile();
         MaterialWatchlist.markDirty();
-        source.sendFeedback(Text.literal("已移出黑名单 " + id));
+        source.sendFeedback(Text.literal("已移出黑名单 " + removed + " 种：" + String.join(", ", ids)));
         return 1;
     }
 
@@ -109,5 +121,23 @@ public final class MaterialScanCommand {
             return null;
         }
         return Registries.ITEM.getId(item).toString();
+    }
+
+    /** 支持逗号分隔的批量 ID（聊天里的 [拉黑全部] 用）。 */
+    private static List<String> normalizeMany(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            String id = normalize(part);
+            if (id == null) {
+                return null;
+            }
+            if (!out.contains(id)) {
+                out.add(id);
+            }
+        }
+        return out.isEmpty() ? null : out;
     }
 }

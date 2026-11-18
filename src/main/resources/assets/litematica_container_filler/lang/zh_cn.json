@@ -484,6 +484,8 @@
   "litematica_container_filler.config.comment.materialScanChat": "在聊天框显示附近可采材料 + 还缺数量 + [拉黑] 按钮。关掉就只做箱子外框搜索。",
   "litematica_container_filler.config.name.materialScanChatInterval": "聊天提示最小间隔（tick）",
   "litematica_container_filler.config.comment.materialScanChatInterval": "同一批材料至少间隔多久再提示；200 = 10 秒。只在内容变化时发。",
+  "litematica_container_filler.config.name.materialScanMinNeed": "聊天汇总最小缺口",
+  "litematica_container_filler.config.comment.materialScanMinNeed": "某个来源（原木/沙砾/牛…）下所有缺料合计低于此值就不在聊天里显示，用来过滤 1~2 个的展示样品。默认 16；设 0 = 不过滤。看详细清单请用 GUI 材料列表。",
   "litematica_container_filler.config.name.materialScanChestSearch": "自动搜索含缺料的箱子（箱子外框）",
   "litematica_container_filler.config.comment.materialScanChestSearch": "套用 ChestTracker 点物品的行为：把缺料清单丢给内嵌 WhereIsIt 搜索，已开过的、含缺料的箱子会亮外框（穿墙，约 15 秒淡出）。需要装【箱子追踪】；没装只保留聊天提示。",
   "litematica_container_filler.config.name.materialScanChestInterval": "箱子外框搜索间隔（tick）",

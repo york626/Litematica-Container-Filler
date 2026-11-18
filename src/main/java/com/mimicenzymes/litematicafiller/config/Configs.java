@@ -157,6 +157,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean MATERIAL_SCAN_CHAT = new ConfigBoolean("litematica_container_filler.config.name.materialScanChat", true, "litematica_container_filler.config.comment.materialScanChat");
     /** 聊天提示最小间隔（tick）：200 = 10 秒。 */
     public static final ConfigInteger MATERIAL_SCAN_CHAT_INTERVAL = new ConfigInteger("litematica_container_filler.config.name.materialScanChatInterval", 200, 20, 1200, "litematica_container_filler.config.comment.materialScanChatInterval");
+    /** 聊天汇总里，某来源合计缺口低于此值就不显示（默认 16，过滤 1~2 个的展示样品）。 */
+    public static final ConfigInteger MATERIAL_SCAN_MIN_NEED = new ConfigInteger("litematica_container_filler.config.name.materialScanMinNeed", 16, 0, 9999, "litematica_container_filler.config.comment.materialScanMinNeed");
     /** 是否自动触发 ChestTracker/WhereIsIt 的箱子外框搜索。Ray 2026-11-18：先放下，默认关。 */
     public static final ConfigBoolean MATERIAL_SCAN_CHEST_SEARCH = new ConfigBoolean("litematica_container_filler.config.name.materialScanChestSearch", false, "litematica_container_filler.config.comment.materialScanChestSearch");
     /** 箱子外框搜索间隔（tick）：200 = 10 秒（WhereIsIt 默认 15 秒淡出）。 */
@@ -306,6 +308,7 @@ public class Configs implements IConfigHandler {
                 MATERIAL_SCAN_ENTITIES,
                 MATERIAL_SCAN_CHAT,
                 MATERIAL_SCAN_CHAT_INTERVAL,
+                MATERIAL_SCAN_MIN_NEED,
                 MATERIAL_SCAN_CHEST_SEARCH,
                 MATERIAL_SCAN_CHEST_INTERVAL,
                 MATERIAL_SCAN_BLACKLIST
