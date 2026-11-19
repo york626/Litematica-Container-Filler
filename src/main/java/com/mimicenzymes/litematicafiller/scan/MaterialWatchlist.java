@@ -99,12 +99,38 @@ public final class MaterialWatchlist {
             }
             rawItems.sort(Comparator.comparingLong(WatchItem::need).reversed());
 
-            snapshot = new Snapshot(List.copyOf(rawItems), List.copyOf(plan.primaryItems()),
+            // 【Ray 2026-11-19】箱子搜索条件 = 材料列表缺失（一级）+ 「绿色材料高亮」同源集合（含二级材料）。
+            // 例：材料列表缺「灵魂灯笼 ×4」⇒ 绿色高亮会闪箱子里的「灵魂火把」（二级材料）；
+            // 以前箱子搜索只带一级成品，箱子里有灵魂火把也不会亮 —— 两边口径必须一致。
+            List<ItemStack> searchItems = new ArrayList<>(plan.primaryItems());
+            Set<Item> searchSeen = new HashSet<>();
+            for (ItemStack stack : searchItems) {
+                if (stack != null && !stack.isEmpty()) {
+                    searchSeen.add(stack.getItem());
+                }
+            }
+            int primaryCount = searchItems.size();
+            try {
+                Map<Item, Long> highlightNeed = FillMaterialCalculator.getCurrentViewMissingForHighlight();
+                for (Map.Entry<Item, Long> entry : highlightNeed.entrySet()) {
+                    if (entry.getKey() == null || entry.getValue() == null || entry.getValue() <= 0) {
+                        continue;
+                    }
+                    if (searchSeen.add(entry.getKey())) {
+                        searchItems.add(new ItemStack(entry.getKey()));
+                    }
+                }
+            } catch (Throwable ignored) {
+                // 高亮口径算不出来（材料列表没建好等）⇒ 退回只用一级缺失
+            }
+
+            snapshot = new Snapshot(List.copyOf(rawItems), List.copyOf(searchItems),
                     plan.primaryRaw(), ++version);
             dirty = false;
             lastRefreshMs = System.currentTimeMillis();
-            LOGGER.info("[material-scan] 清单刷新：{} ms｜原料 {} 种、箱子搜索 {} 项（缺料行 {}）",
-                    System.currentTimeMillis() - started, rawItems.size(), plan.primaryItems().size(), rows.size());
+            LOGGER.info("[material-scan] 清单刷新：{} ms｜原料 {} 种、箱子搜索 {} 项（缺料行 {}，其中一级 {} + 二级 {}）",
+                    System.currentTimeMillis() - started, rawItems.size(), searchItems.size(), rows.size(),
+                    primaryCount, searchItems.size() - primaryCount);
         } catch (Throwable t) {
             LOGGER.warn("[material-scan] 清单刷新失败：{}", t.toString());
         }
