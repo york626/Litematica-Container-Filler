@@ -174,9 +174,13 @@ public final class NearbyMaterialScanner {
             scanCooldown = CYCLE_COOLDOWN_TICKS;
         }
 
-        // 箱子外框（独立计时）
+        // 箱子外框（独立计时）：只在没有界面时搜。
+        // ⛔ WhereIsIt 的 close_gui_on_found_results 默认 true —— 搜索一找到结果就主动关界面；
+        //    材料列表/箱子界面开着时发搜索会把 Ray 的界面顶掉。关界面后下一 tick 立即补一次。
         if (Configs.MATERIAL_SCAN_CHEST_SEARCH.getBooleanValue()) {
-            if (chestTimer-- <= 0) {
+            if (client.currentScreen != null) {
+                chestTimer = 0;
+            } else if (chestTimer-- <= 0) {
                 chestTimer = Math.max(40, Configs.MATERIAL_SCAN_CHEST_INTERVAL.getIntegerValue());
                 List<ItemStack> searchItems = MaterialWatchlist.snapshot().searchItems();
                 if (!searchItems.isEmpty()) {
