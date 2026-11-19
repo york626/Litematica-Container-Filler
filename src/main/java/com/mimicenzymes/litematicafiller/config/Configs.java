@@ -139,6 +139,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean MATERIAL_HIGHLIGHT                        = new ConfigBoolean("litematica_container_filler.config.name.materialHighlight", true, "litematica_container_filler.config.comment.materialHighlight");
     /** 二级材料显示：材料列表每行追加「←N 原料 / ≈N 可互换物」，备够变白、没备够变灰；数量列同款写法。 */
     public static final ConfigBoolean MATERIAL_BREAKDOWN                        = new ConfigBoolean("litematica_container_filler.config.name.materialBreakdown", true, "litematica_container_filler.config.comment.materialBreakdown");
+    /** 二级材料提示是否显示「整单总需」（Ray 2026-11-19）：关=只显示本行用量；开=显示 `本行/整单`（例 ←2/34锁链）。判定始终按整单。 */
+    public static final ConfigBoolean MATERIAL_BREAKDOWN_SHOW_TOTAL             = new ConfigBoolean("litematica_container_filler.config.name.materialBreakdownShowTotal", false, "litematica_container_filler.config.comment.materialBreakdownShowTotal");
     /** L 热键打开材料列表时，强制使用**当前选中放置**的列表（与「配置→原理图放置→材料列表」完全一致）。 */
     public static final ConfigBoolean MATERIAL_LIST_HOTKEY_PLACEMENT           = new ConfigBoolean("litematica_container_filler.config.name.materialListHotkeyPlacement", true, "litematica_container_filler.config.comment.materialListHotkeyPlacement");
 
@@ -262,6 +264,7 @@ public class Configs implements IConfigHandler {
                 MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED,
                 MATERIAL_HIGHLIGHT,
                 MATERIAL_BREAKDOWN,
+                MATERIAL_BREAKDOWN_SHOW_TOTAL,
                 MATERIAL_LIST_HOTKEY_PLACEMENT
         );
 

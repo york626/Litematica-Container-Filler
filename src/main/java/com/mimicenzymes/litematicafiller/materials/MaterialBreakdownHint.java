@@ -192,10 +192,12 @@ public final class MaterialBreakdownHint {
                     text.append('+');
                 }
                 // 数量规格跟原版材料列表一致（总数 + 组数 x 堆叠 + 余数），只是**不带括号**（Ray 2026-11-08 要的）。
-                // ⭐ v1.22.4-Ray（Ray 2026-11-19）：颜色按**整单总需**判（见上面 judgeNeed），显示改成
-                //   `本行用量/整单`：`←2/34锁链+6/7去皮竹块`（紧凑、无空格；总需=本行时只显示 `2锁链`）。
+                // ⭐ v1.22.4-Ray：颜色按**整单总需**判（见上面 judgeNeed）。
+                // ⭐ v1.22.5-Ray（Ray 2026-11-19「总需看着不习惯，加个开关」）：显示整单需求受配置
+                //   MATERIAL_BREAKDOWN_SHOW_TOTAL 控制（默认关 = 只显示本行用量；开 = `2/34锁链`）。
                 text.append(shown);
-                if (judgeNeed > need) {
+                if (judgeNeed > need
+                        && com.mimicenzymes.litematicafiller.config.Configs.MATERIAL_BREAKDOWN_SHOW_TOTAL.getBooleanValue()) {
                     text.append('/').append(judgeNeed);
                 }
                 text.append(name);
