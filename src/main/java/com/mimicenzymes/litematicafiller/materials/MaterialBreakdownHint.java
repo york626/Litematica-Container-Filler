@@ -197,6 +197,12 @@ public final class MaterialBreakdownHint {
                 if (hint.parts.size() == 1) {
                     text.append(stackBreakdown(shown, part.item));
                 }
+                // ⭐ v1.22.3-Ray（Ray 2026-11-19）：颜色按**整单总需**判（见上面 judgeNeed），但之前只显示
+                //   本行用量（例：2 锁链）⇒ 「有 7 个却还是灰」看不懂。总需大于本行用量时补一句
+                //   `（整单 34）`，让数字和颜色对得上。
+                if (judgeNeed > need) {
+                    text.append("（整单 ").append(judgeNeed).append("）");
+                }
                 if (firstPart) {
                     firstAvailable = available;
                     firstNeed = judgeNeed;   // 日志里报"判定需求"（含一级占用），排查假白/假灰就看它
