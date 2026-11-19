@@ -128,6 +128,14 @@ public final class SbpClientInventory {
         if (lastWornUuid != null) {
             keepOrRestoreCopy(lastWornUuid);
         }
+        // ⭐ v1.22.10：镜像从空恢复成有 ⇒ **主动刷新一次材料列表计数**。
+        //   实测（v1.22.8）：镜像和 getInventoryItemCounts 都已经恢复成 1374/60，但列表行还是旧的
+        //   ⇒ 说明列表那一份没有跟着重算，只能手动 updateAvailableCounts + recreateFilteredList。
+        boolean copyHas = lastWornUuid != null && !contentsEmpty(lastWornUuid);
+        if (copyHas && !lastCopyHadContent) {
+            refreshMaterialListCounts(client);
+        }
+        lastCopyHadContent = copyHas;
 
         if (dimensionChanged) {
             // ⭐ v1.22.7：切维度后头 30 秒**每 2 秒重试**（v1.22.6 只发一次，服务端/trinket 还没就绪
@@ -150,6 +158,27 @@ public final class SbpClientInventory {
         if (now < diagUntil && now - lastDiagAt >= 2000L) {
             lastDiagAt = now;
             logDiagnostics(client);
+        }
+    }
+
+    /** 主动让材料列表的行按当前背包内容重算（只在镜像恢复时调，1 秒最多一次）。 */
+    private static void refreshMaterialListCounts(MinecraftClient client) {
+        long now = System.currentTimeMillis();
+        if (now - lastListRefreshMs < 1000L) {
+            return;
+        }
+        lastListRefreshMs = now;
+        try {
+            fi.dy.masa.litematica.materials.MaterialListBase list =
+                    fi.dy.masa.litematica.data.DataManager.getMaterialList();
+            if (list == null || client.player == null) {
+                return;
+            }
+            fi.dy.masa.litematica.materials.MaterialListUtils.updateAvailableCounts(
+                    list.getMaterialsAll(), client.player);
+            list.recreateFilteredList();
+            LOGGER.info("[sbp] 已强制刷新材料列表计数（背包镜像恢复后）");
+        } catch (Throwable ignored) {
         }
     }
 
@@ -186,11 +215,28 @@ public final class SbpClientInventory {
             int sticksApi = countApi(client, net.minecraft.item.Items.STICK);
             int planksApi = countApi(client, net.minecraft.item.Items.ACACIA_PLANKS);
             Map<Item, Long> snapshot = snapshot(client.player);
-            LOGGER.info("[sbp-diag] 镜像={}（{} 个键）｜Litematica 统计算术(木棍)={}、金合欢木板={}｜SBP 快照(木棍)={}、金合欢木板={}",
+            int rowAvailable = -1;
+            int rowMissing = -1;
+            try {
+                fi.dy.masa.litematica.materials.MaterialListBase list =
+                        fi.dy.masa.litematica.data.DataManager.getMaterialList();
+                if (list != null) {
+                    for (fi.dy.masa.litematica.materials.MaterialListEntry entry : list.getMaterialsAll()) {
+                        if (entry != null && entry.getStack().getItem() == net.minecraft.item.Items.ACACIA_PLANKS) {
+                            rowAvailable = entry.getCountAvailable();
+                            rowMissing = entry.getCountMissing();
+                            break;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            LOGGER.info("[sbp-diag] 镜像={}（{} 个键）｜Litematica 统计(木棍)={}、金合欢木板={}｜SBP 快照(木棍)={}、金合欢木板={}｜清单行(金合欢木板) 可用={} 缺={}",
                     copyHas ? "有" : "空", copyKeys,
                     sticksApi, planksApi,
                     snapshot.getOrDefault(net.minecraft.item.Items.STICK, 0L),
-                    snapshot.getOrDefault(net.minecraft.item.Items.ACACIA_PLANKS, 0L));
+                    snapshot.getOrDefault(net.minecraft.item.Items.ACACIA_PLANKS, 0L),
+                    rowAvailable, rowMissing);
         } catch (Throwable t) {
             LOGGER.warn("[sbp-diag] 诊断输出失败：{}", t.toString());
         }
@@ -286,5 +332,8 @@ public final class SbpClientInventory {
     /** 每个背包最后一次「非空」的客户端镜像内容；镜像被人清空时用它补回去（v1.22.9）。 */
     private static final Map<UUID, NbtCompound> lastGoodCopy = new HashMap<>();
     private static long lastCopyCacheMs = 0L;
+    /** 上一次 tick 时镜像是否有内容（用于检测“空→有”的恢复瞬间）。 */
+    private static boolean lastCopyHadContent = false;
+    private static long lastListRefreshMs = 0L;
     private static final Map<UUID, Long> lastRequestAt = new HashMap<>();
 }
