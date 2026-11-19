@@ -2,6 +2,7 @@ package com.mimicenzymes.litematicafiller.scan;
 
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.math.BlockPos;
 import red.jackf.whereisit.api.SearchRequest;
 import red.jackf.whereisit.api.criteria.Criterion;
 import red.jackf.whereisit.api.criteria.builtin.AnyOfCriterion;
@@ -40,6 +41,8 @@ public final class WhereIsItBridge {
     private static long suppressSlotHighlightUntilMs = 0L;
     /** 抑制窗口：覆盖 WhereIsIt 服务端回包把 lastRequest 再设回来（通常 1~2 tick）。 */
     private static final long SUPPRESS_WINDOW_MS = 3000L;
+    /** 最近一次背景搜索用的请求（只读诊断：核对“箱子里的东西到底在不在搜索条件里”）。 */
+    private static volatile SearchRequest lastRequest;
 
     private WhereIsItBridge() {
     }
@@ -88,6 +91,7 @@ public final class WhereIsItBridge {
             }
             SearchRequest request = new SearchRequest();
             request.accept(new AnyOfCriterion(criteria).compact());
+            lastRequest = request;
             boolean result = SearchInvoker.doSearch(request);
             // 背景搜索只负责世界外框；打开界面后的槽位高亮交给 CF 自己的「材料高亮」
             // （只闪够用的盒子、跳过玩家背包/精妙背包界面）。这里开启抑制窗口。
@@ -124,6 +128,45 @@ public final class WhereIsItBridge {
         try {
             Rendering.setLastRequest(null);
         } catch (Throwable ignored) {
+        }
+    }
+
+    // ------------------------------------------------------------ 只读诊断
+
+    /** WhereIsIt 当前结果数（-1 = API 不可用）。 */
+    public static int resultCount() {
+        if (!isAvailable()) {
+            return -1;
+        }
+        try {
+            return Rendering.getResults().size();
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /** 这个方块位置是否在 WhereIsIt 当前结果里（世界外框就是按这个 Map 画的）。 */
+    public static boolean isHighlighted(BlockPos pos) {
+        if (pos == null || !isAvailable()) {
+            return false;
+        }
+        try {
+            return Rendering.getResults().containsKey(pos);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 这个物品（含盒内内容，WhereIsIt 的嵌套搜索语义）是否命中上次背景搜索的条件。 */
+    public static boolean matches(ItemStack stack) {
+        SearchRequest request = lastRequest;
+        if (request == null || stack == null || stack.isEmpty()) {
+            return false;
+        }
+        try {
+            return SearchRequest.check(stack, request);
+        } catch (Throwable t) {
+            return false;
         }
     }
 }

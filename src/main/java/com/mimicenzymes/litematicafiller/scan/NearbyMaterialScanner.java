@@ -19,9 +19,12 @@ import net.minecraft.entity.passive.GlowSquidEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.passive.SquidEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.inventory.Inventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -62,6 +65,9 @@ public final class NearbyMaterialScanner {
     private static boolean lastHotkey = false;
     private static int refreshTimer = 0;
     private static int chestTimer = 0;
+    private static int chestDiagTimer = 0;
+    /** 只读诊断：准星容器上一次打过的判据签名（不变就不重复打）。 */
+    private static String lastChestDiag = "";
     private static int scanCooldown = 0;
     /** 进世界后先等 40 tick（2 秒）再开始扫描/展开，避免进游戏时抢主线程。 */
     private static int joinGraceTicks = 0;
@@ -181,6 +187,11 @@ public final class NearbyMaterialScanner {
             // 背景搜索不做 GUI 槽位高亮（否则玩家背包/精妙背包/箱子里每个匹配槽位都涂黄）；
             // 容器内的槽位高亮交给 CF 自己的「材料高亮」（按需求数量、一盒够就只闪一盒）。
             WhereIsItBridge.suppressSlotHighlights();
+            // 只读诊断（Ray 2026-11-19：看着的箱子不亮）：每 2 秒核一次准星指着的容器
+            if (--chestDiagTimer <= 0) {
+                chestDiagTimer = 40;
+                logLookingContainerDiag(client);
+            }
             if (client.currentScreen != null) {
                 chestTimer = 0;
             } else if (chestTimer-- <= 0) {
@@ -191,6 +202,53 @@ public final class NearbyMaterialScanner {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------- 只读诊断
+
+    /**
+     * 只读诊断（Ray 2026-11-19：「我需要这个箱子里面的物品，但这个箱子没高亮」）：
+     * 准星指着容器时，核对三件事 ——
+     * ① WhereIsIt 当前结果里有没有它（有 ⇒ 渲染问题，没有 ⇒ 搜索没找到）；
+     * ② 容器里的物品是否命中背景搜索条件（不命中 ⇒ 材料列表当前视图里根本没这些物品）；
+     * ③ 命中几个/具体是什么（盒装内容按 WhereIsIt 的嵌套搜索判断）。
+     */
+    private static void logLookingContainerDiag(MinecraftClient client) {
+        if (client.player == null || client.world == null) {
+            return;
+        }
+        if (!(client.crosshairTarget instanceof BlockHitResult hit)) {
+            return;
+        }
+        BlockPos pos = hit.getBlockPos();
+        if (!(client.world.getBlockEntity(pos) instanceof Inventory inventory)) {
+            return;
+        }
+        int nonEmpty = 0;
+        List<String> hits = new ArrayList<>();
+        for (int i = 0; i < inventory.size(); i++) {
+            ItemStack stack = inventory.getStack(i);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            nonEmpty++;
+            if (WhereIsItBridge.matches(stack)) {
+                hits.add(Registries.ITEM.getId(stack.getItem()) + "×" + stack.getCount());
+            }
+        }
+        int resultCount = WhereIsItBridge.resultCount();
+        boolean inResults = WhereIsItBridge.isHighlighted(pos);
+        String signature = pos.toShortString() + "|" + inResults + "|" + hits.size() + "|" + nonEmpty + "|" + resultCount;
+        if (signature.equals(lastChestDiag)) {
+            return;
+        }
+        lastChestDiag = signature;
+        double distance = Math.sqrt(client.player.getBlockPos().getSquaredDistance(pos));
+        LOGGER.info("[material-scan] 外框诊断：准星容器 {} 距离 {} 格｜WhereIsIt 结果 {} 个｜该容器在结果里={}｜槽位 {}，非空 {}，命中搜索条件 {} 个：{}",
+                pos.toShortString(), String.format("%.1f", distance), resultCount, inResults,
+                inventory.size(), nonEmpty, hits.size(),
+                hits.isEmpty() ? "（无 —— 材料列表当前视图不含这些物品）"
+                        : String.join("、", hits.subList(0, Math.min(8, hits.size()))));
     }
 
     // ---------------------------------------------------------------- 扫描
