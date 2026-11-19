@@ -393,7 +393,7 @@ public class FillMaterialCalculator {
                 continue;
             }
             net.minecraft.item.Item item = entry.getStack().getItem();
-            int missing = Math.max(0, entry.getCountTotal()) - countHeldNow(client, item);
+            int missing = Math.max(0, entry.getCountTotal()) - countHeldForHighlight(client, item);
             if (missing > 0) {
                 out.merge(item, (long) missing, Long::sum);
             }
@@ -413,7 +413,7 @@ public class FillMaterialCalculator {
                     }
                     int threshold = com.mimicenzymes.litematicafiller.config.Configs.AUTO_COLLECT_SECONDARY_THRESHOLD.getIntegerValue();
                     MaterialDemandCore.Result result = MaterialDemandCore.expand(rowsMissing,
-                            buildRecipeSource(client), item -> countHeldNow(client, item),
+                            buildRecipeSource(client), item -> countHeldForHighlight(client, item),
                             item -> ownTotals.getOrDefault(item, 0), threshold);
                     for (MaterialDemandCore.Demand demand : result.demands()) {
                         if (demand.finalNeed() > 0) {
@@ -559,6 +559,45 @@ public class FillMaterialCalculator {
             }
         }
         return sum;
+    }
+
+    /**
+     * 「高亮 / 箱子外框」口径的已有量 = 身上散装 + 盒内一层 + **精妙背包**（v1.22.2）。
+     *
+     * <p>Ray 2026-11-19：「外框高亮了木棍，自动取货却说已收完」——自动取货在服务端会扣
+     * 精妙背包存量，而高亮只算散装 ⇒ 两边对不上。这里把精妙背包（穿戴 + 携带，含盒内一层）
+     * 也补进“已有”，让高亮/外框与自动取货同口径。
+     *
+     * <p>精妙背包内容用 2 秒快照缓存：一次刷新/高亮会连查几百个物品，不能每个都扫一遍背包。
+     * ⚠️ 自动取货的「客户端净缺口」仍用 {@link #countHeldNow}（服务端会再扣一次精妙背包，
+     * 两边都改会双扣）。
+     */
+    private static int countHeldForHighlight(MinecraftClient client, net.minecraft.item.Item item) {
+        int held = countHeldNow(client, item);
+        Map<net.minecraft.item.Item, Long> backpacks = backpackSnapshot(client);
+        if (!backpacks.isEmpty()) {
+            held += backpacks.getOrDefault(item, 0L).intValue();
+        }
+        return held;
+    }
+
+    private static long backpackSnapshotAt = 0L;
+    private static Map<net.minecraft.item.Item, Long> backpackSnapshot = Map.of();
+
+    private static Map<net.minecraft.item.Item, Long> backpackSnapshot(MinecraftClient client) {
+        long now = System.currentTimeMillis();
+        if (now - backpackSnapshotAt < 2000L) {
+            return backpackSnapshot;
+        }
+        backpackSnapshotAt = now;
+        try {
+            backpackSnapshot = com.mimicenzymes.litematicafiller.compat.sbp.SbpSupport.available()
+                    ? com.mimicenzymes.litematicafiller.compat.sbp.SbpClientInventory.snapshot(client.player)
+                    : Map.of();
+        } catch (Throwable ignored) {
+            backpackSnapshot = Map.of();
+        }
+        return backpackSnapshot;
     }
 
     /**
