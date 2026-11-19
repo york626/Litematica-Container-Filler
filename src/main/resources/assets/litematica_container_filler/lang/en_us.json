@@ -492,6 +492,8 @@
   "litematica_container_filler.config.comment.materialScanChestSearch": "Reuses ChestTracker's click-an-item behavior: feeds the missing list to the embedded WhereIsIt search, so opened chests containing missing materials get an outline (through walls, ~5s fade). Only searches while no screen is open (WhereIsIt would otherwise close the screen). Requires Chest Tracker; without it only chat hints remain.",
   "litematica_container_filler.config.name.materialScanChestInterval": "Chest Outline Search Interval (ticks)",
   "litematica_container_filler.config.comment.materialScanChestInterval": "Re-triggers every 100 ticks (5 seconds) to match WhereIsIt's 5-second fade (fadeout_time_ticks default 100).",
+  "litematica_container_filler.config.name.materialScanClusters": "Resource Clusters On Map (Xaero)",
+  "litematica_container_filler.config.comment.materialScanClusters": "Marks discovered resource clusters on the Xaero world map/minimap: same required raw material in adjacent 16^3 sections merged and >=64 total becomes a red waypoint named *item x count*. Accumulates as you walk, updates on rescan, removed when mined out; saved per dimension (config/litematica_container_filler/material_clusters.json). Follows the wild scan master switch; skipped when Xaero is not installed.",
   "litematica_container_filler.config.name.materialScanBlacklist": "Wild Scan Blacklist",
   "litematica_container_filler.config.comment.materialScanBlacklist": "Item IDs excluded from nearby hints / chest search (e.g. minecraft:stone). Empty by default; the chat's [Blacklist] button adds them, and /lcf scan blacklist add|remove manages the list.",
   "litematica_container_filler.hotkey.name.materialScanToggle": "Toggle Wild Material Scan",
