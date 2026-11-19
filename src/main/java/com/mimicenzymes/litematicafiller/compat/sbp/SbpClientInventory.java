@@ -19,6 +19,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -116,48 +117,50 @@ public final class SbpClientInventory {
         lastDimension = dimension;
         long now = System.currentTimeMillis();
 
-        // 每次尽量更新「穿戴背包的 UUID」；切维度刚开始 trinket 数据可能还没同步 ⇒ 用上一次的兜底。
-        UUID worn = findWornUuid(client);
-        if (worn != null) {
-            lastWornUuid = worn;
+        // Ray 2026-11-19：身上**穿戴**一个、玩家背包里还**携带**一个精妙背包 ⇒ 两个都要同步，
+        // 只处理 trinkets 会把携带那个漏掉（材料列表统计两个都算）。
+        Set<UUID> uuids = findBackpackUuids(client);
+        if (!uuids.isEmpty()) {
+            lastBackpackUuids = uuids;
         }
 
-        // ⭐ v1.22.9：SBP 的客户端镜像会**反复闪空**（切维度、周期重同步都会清一下；日志实测
-        //   20:24:09 / 20:24:59 两次空窗）。材料列表每次重算正好撞上空窗就显示“认不到”。
-        //   这里缓存“上次完整内容”，一发现镜像变空就**立即补回去**；真正的新包到了会覆盖。
-        if (lastWornUuid != null) {
-            keepOrRestoreCopy(lastWornUuid);
+        boolean restoredAny = false;
+        for (UUID uuid : lastBackpackUuids) {
+            restoredAny |= keepOrRestoreCopy(uuid);
         }
-        // ⭐ v1.22.10：镜像从空恢复成有 ⇒ **主动刷新一次材料列表计数**。
-        //   实测（v1.22.8）：镜像和 getInventoryItemCounts 都已经恢复成 1374/60，但列表行还是旧的
-        //   ⇒ 说明列表那一份没有跟着重算，只能手动 updateAvailableCounts + recreateFilteredList。
-        boolean copyHas = lastWornUuid != null && !contentsEmpty(lastWornUuid);
-        if (copyHas && !lastCopyHadContent) {
-            refreshMaterialListCounts(client);
-        }
-        lastCopyHadContent = copyHas;
 
         if (dimensionChanged) {
-            // ⭐ v1.22.7：切维度后头 30 秒**每 2 秒重试**（v1.22.6 只发一次，服务端/trinket 还没就绪
-        //   ⇒ 要等很久的 5 秒兜底才成功；Ray 实测切回主世界仍是“认不到”）。
             forceSyncUntil = now + 30000L;
             lastPeriodicMs = now;
-            diagUntil = now + 30000L;   // v1.22.8：切维度后 30 秒只读诊断
+            diagUntil = now + 30000L;
             lastDiagAt = 0L;
-            requestSync(lastWornUuid);
+            requestSyncAll();
+            // 切维度后先按现有（可能是缓存兜底的）内容刷一次，别等下一次自然重算
+            refreshMaterialListCounts(client);
         } else if (now < forceSyncUntil) {
-            requestSync(lastWornUuid);
+            requestSyncAll();
         } else if (now - lastPeriodicMs >= 5000L) {
             lastPeriodicMs = now;
-            if (lastWornUuid != null && contentsEmpty(lastWornUuid)) {
-                requestSync(lastWornUuid);
+            for (UUID uuid : lastBackpackUuids) {
+                if (contentsEmpty(uuid)) {
+                    requestSync(uuid);
+                }
             }
         }
-        // 【只读诊断】切维度后 30 秒，每 2 秒看一眼：客户端镜像有没有内容、
-        // Litematica 自己的统计口径（getInventoryItemCounts）认不认背包、我们自己的快照认不认。
+        // 兜底补回内容之后，主动让材料列表按新内容重算一次（v1.22.10 的触发条件之前写错了：
+        // 兜底发生在同一 tick，检测不到“空→有”；现在直接看恢复动作有没有发生）。
+        if (restoredAny) {
+            refreshMaterialListCounts(client);
+        }
         if (now < diagUntil && now - lastDiagAt >= 2000L) {
             lastDiagAt = now;
             logDiagnostics(client);
+        }
+    }
+
+    private static void requestSyncAll() {
+        for (UUID uuid : lastBackpackUuids) {
+            requestSync(uuid);
         }
     }
 
@@ -182,8 +185,9 @@ public final class SbpClientInventory {
         }
     }
 
-    /** 镜像有内容 ⇒ 缓存（2 秒最多拷一次，背包 NBT 可能很大）；镜像被清空 ⇒ 用上次内容补回去。 */
-    private static void keepOrRestoreCopy(UUID uuid) {
+    /** 镜像有内容 ⇒ 缓存（2 秒最多拷一次，背包 NBT 可能很大）；镜像被清空 ⇒ 用上次内容补回去。
+     *  @return true = 发生了“兜底补回” */
+    private static boolean keepOrRestoreCopy(UUID uuid) {
         try {
             NbtCompound current = BackpackStorage.get().getOrCreateBackpackContents(uuid);
             long now = System.currentTimeMillis();
@@ -192,35 +196,47 @@ public final class SbpClientInventory {
                     lastCopyCacheMs = now;
                     lastGoodCopy.put(uuid, current.copy());
                 }
-                return;
+                return false;
             }
             NbtCompound cached = lastGoodCopy.get(uuid);
             if (cached != null) {
                 BackpackStorage.get().setBackpackContents(uuid, cached.copy());
                 LOGGER.info("[sbp] 镜像被清空，已用上次内容兜底（{} 个键）uuid={}", cached.getSize(), uuid);
+                return true;
             }
         } catch (Throwable ignored) {
         }
+        return false;
     }
 
     private static void logDiagnostics(MinecraftClient client) {
         try {
-            UUID uuid = lastWornUuid;
-            boolean copyHas = uuid != null && !contentsEmpty(uuid);
-            int copyKeys = 0;
-            if (uuid != null) {
-                NbtCompound contents = BackpackStorage.get().getOrCreateBackpackContents(uuid);
-                copyKeys = contents == null ? 0 : contents.getSize();
+            int total = lastBackpackUuids.size();
+            int withContent = 0;
+            int keys = 0;
+            for (UUID uuid : lastBackpackUuids) {
+                try {
+                    NbtCompound contents = BackpackStorage.get().getOrCreateBackpackContents(uuid);
+                    if (contents != null && !contents.isEmpty()) {
+                        withContent++;
+                        keys += contents.getSize();
+                    }
+                } catch (Throwable ignored) {
+                }
             }
             int sticksApi = countApi(client, net.minecraft.item.Items.STICK);
             int planksApi = countApi(client, net.minecraft.item.Items.ACACIA_PLANKS);
             Map<Item, Long> snapshot = snapshot(client.player);
             int rowAvailable = -1;
             int rowMissing = -1;
+            String listName = "?";
+            int listRows = -1;
             try {
                 fi.dy.masa.litematica.materials.MaterialListBase list =
                         fi.dy.masa.litematica.data.DataManager.getMaterialList();
                 if (list != null) {
+                    listName = String.valueOf(list.getName());
+                    listRows = list.getMaterialsAll().size();
                     for (fi.dy.masa.litematica.materials.MaterialListEntry entry : list.getMaterialsAll()) {
                         if (entry != null && entry.getStack().getItem() == net.minecraft.item.Items.ACACIA_PLANKS) {
                             rowAvailable = entry.getCountAvailable();
@@ -231,12 +247,12 @@ public final class SbpClientInventory {
                 }
             } catch (Throwable ignored) {
             }
-            LOGGER.info("[sbp-diag] 镜像={}（{} 个键）｜Litematica 统计(木棍)={}、金合欢木板={}｜SBP 快照(木棍)={}、金合欢木板={}｜清单行(金合欢木板) 可用={} 缺={}",
-                    copyHas ? "有" : "空", copyKeys,
+            LOGGER.info("[sbp-diag] 背包={}/{} 有内容（共 {} 键）｜Litematica 统计(木棍)={}、金合欢木板={}｜SBP 快照(木棍)={}、金合欢木板={}｜清单「{}」{} 行，清单行(金合欢木板) 可用={} 缺={}",
+                    withContent, total, keys,
                     sticksApi, planksApi,
                     snapshot.getOrDefault(net.minecraft.item.Items.STICK, 0L),
                     snapshot.getOrDefault(net.minecraft.item.Items.ACACIA_PLANKS, 0L),
-                    rowAvailable, rowMissing);
+                    listName, listRows, rowAvailable, rowMissing);
         } catch (Throwable t) {
             LOGGER.warn("[sbp-diag] 诊断输出失败：{}", t.toString());
         }
@@ -279,29 +295,22 @@ public final class SbpClientInventory {
         }
     }
 
-    /** 找穿戴在 trinkets 槽里的背包 UUID（找不到返回 null）。 */
-    private static UUID findWornUuid(MinecraftClient client) {
-        UUID[] found = {null};
+    /** 收集**所有**精妙背包（穿戴 + 携带）的内容 UUID。 */
+    private static Set<UUID> findBackpackUuids(MinecraftClient client) {
+        Set<UUID> found = new java.util.HashSet<>();
         try {
             PlayerInventoryProvider.get().runOnBackpacks(client.player,
                     (backpackStack, invIdentifier, identifier, slot) -> {
-                        if (invIdentifier == null || !"trinkets".equals(invIdentifier)) {
-                            return false;   // 只处理穿戴的那一个（携带在主背包里的切维度不受影响）
-                        }
                         try {
                             IBackpackWrapper wrapper = BackpackWrapper.fromStack(backpackStack);
-                            Optional<UUID> uuid = contentsUuid(wrapper);
-                            if (uuid.isPresent()) {
-                                found[0] = uuid.get();
-                                return true;   // 找到一个就够了
-                            }
+                            contentsUuid(wrapper).ifPresent(found::add);
                         } catch (Throwable ignored) {
                         }
                         return false;
                     });
         } catch (Throwable ignored) {
         }
-        return found[0];
+        return found;
     }
 
     /** `BackpackWrapper.getContentsUuid()`（IBackpackWrapper 上没有 ⇒ 对它反射）。 */
@@ -327,13 +336,11 @@ public final class SbpClientInventory {
     /** 【只读诊断】切维度后 60 秒内的诊断截止时间 / 上次输出时刻。 */
     private static long diagUntil = 0L;
     private static long lastDiagAt = 0L;
-    /** 上一次找到的穿戴背包 UUID（切维度刚开始 trinket 数据没同步时用它兜底）。 */
-    private static UUID lastWornUuid;
+    /** 上一次找到的全部背包 UUID（穿戴 + 携带；切维度刚开始数据没同步时用它兜底）。 */
+    private static Set<UUID> lastBackpackUuids = Set.of();
     /** 每个背包最后一次「非空」的客户端镜像内容；镜像被人清空时用它补回去（v1.22.9）。 */
     private static final Map<UUID, NbtCompound> lastGoodCopy = new HashMap<>();
     private static long lastCopyCacheMs = 0L;
-    /** 上一次 tick 时镜像是否有内容（用于检测“空→有”的恢复瞬间）。 */
-    private static boolean lastCopyHadContent = false;
     private static long lastListRefreshMs = 0L;
     private static final Map<UUID, Long> lastRequestAt = new HashMap<>();
 }
