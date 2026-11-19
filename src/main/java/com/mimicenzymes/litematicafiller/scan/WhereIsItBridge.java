@@ -7,6 +7,7 @@ import red.jackf.whereisit.api.criteria.Criterion;
 import red.jackf.whereisit.api.criteria.builtin.AnyOfCriterion;
 import red.jackf.whereisit.client.api.events.SearchInvoker;
 import red.jackf.whereisit.client.api.events.SearchRequestPopulator;
+import red.jackf.whereisit.client.render.Rendering;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,6 +36,11 @@ public final class WhereIsItBridge {
 
     private static Boolean available;
 
+    /** 背景搜索后「抑制 WhereIsIt 槽位高亮」的截止时间（ms）。 */
+    private static long suppressSlotHighlightUntilMs = 0L;
+    /** 抑制窗口：覆盖 WhereIsIt 服务端回包把 lastRequest 再设回来（通常 1~2 tick）。 */
+    private static final long SUPPRESS_WINDOW_MS = 3000L;
+
     private WhereIsItBridge() {
     }
 
@@ -44,6 +50,7 @@ public final class WhereIsItBridge {
                 Class.forName("red.jackf.whereisit.client.api.events.SearchInvoker");
                 Class.forName("red.jackf.whereisit.client.api.events.SearchRequestPopulator");
                 Class.forName("red.jackf.whereisit.api.criteria.builtin.AnyOfCriterion");
+                Class.forName("red.jackf.whereisit.client.render.Rendering");
                 available = true;
             } catch (Throwable ignored) {
                 available = false;
@@ -82,12 +89,41 @@ public final class WhereIsItBridge {
             SearchRequest request = new SearchRequest();
             request.accept(new AnyOfCriterion(criteria).compact());
             boolean result = SearchInvoker.doSearch(request);
+            // 背景搜索只负责世界外框；打开界面后的槽位高亮交给 CF 自己的「材料高亮」
+            // （只闪够用的盒子、跳过玩家背包/精妙背包界面）。这里开启抑制窗口。
+            suppressSlotHighlightUntilMs = System.currentTimeMillis() + SUPPRESS_WINDOW_MS;
             LOGGER.info("[material-scan] 箱子外框搜索：{} 种物品（来源 {} 项）→ AnyOf {} 条判据，结果={}",
                     seen.size(), items.size(), criteria.size(), result);
             return result;
         } catch (Throwable t) {
             LOGGER.warn("[material-scan] 箱子外框搜索失败：{}", t.toString());
             return false;
+        }
+    }
+
+    /**
+     * 每 tick 调用：抑制 WhereIsIt 的**槽位高亮**（黄框），只保留世界外框。
+     *
+     * <p>Ray 2026-11-19：「玩家自己背包 / 身上的精妙背包里的物品也高亮了，这不对」＋
+     * 「箱子里一排盒装煤炭块都在高亮，只高亮够用的一个盒子就行」。
+     * 两个现象都是 WhereIsIt 的 `Rendering.renderSlotHighlight`：它拿 `lastRequest`
+     * 把**任何界面**（玩家背包、精妙背包、箱子）里匹配的槽位全涂黄，而且不看数量。
+     *
+     * <p>做法：背景搜索后的 {@link #SUPPRESS_WINDOW_MS} 内每 tick 把 `lastRequest` 清掉
+     * （WhereIsIt 服务端回包会再设回来，所以必须持续清）。窗口之外不动 —— 玩家自己在
+     * 容器界面里手动发的 WhereIsIt 搜索仍然照常高亮槽位。
+     */
+    public static void suppressSlotHighlights() {
+        if (suppressSlotHighlightUntilMs == 0L || !isAvailable()) {
+            return;
+        }
+        if (System.currentTimeMillis() >= suppressSlotHighlightUntilMs) {
+            suppressSlotHighlightUntilMs = 0L;
+            return;
+        }
+        try {
+            Rendering.setLastRequest(null);
+        } catch (Throwable ignored) {
         }
     }
 }

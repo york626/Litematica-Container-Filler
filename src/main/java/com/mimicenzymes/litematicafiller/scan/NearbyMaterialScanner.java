@@ -178,6 +178,9 @@ public final class NearbyMaterialScanner {
         // ⛔ WhereIsIt 的 close_gui_on_found_results 默认 true —— 搜索一找到结果就主动关界面；
         //    材料列表/箱子界面开着时发搜索会把 Ray 的界面顶掉。关界面后下一 tick 立即补一次。
         if (Configs.MATERIAL_SCAN_CHEST_SEARCH.getBooleanValue()) {
+            // 背景搜索不做 GUI 槽位高亮（否则玩家背包/精妙背包/箱子里每个匹配槽位都涂黄）；
+            // 容器内的槽位高亮交给 CF 自己的「材料高亮」（按需求数量、一盒够就只闪一盒）。
+            WhereIsItBridge.suppressSlotHighlights();
             if (client.currentScreen != null) {
                 chestTimer = 0;
             } else if (chestTimer-- <= 0) {
