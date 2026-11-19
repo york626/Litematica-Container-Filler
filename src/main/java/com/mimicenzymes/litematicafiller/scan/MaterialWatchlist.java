@@ -12,6 +12,7 @@ import net.minecraft.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,13 +36,14 @@ public final class MaterialWatchlist {
     }
 
     public record Snapshot(List<WatchItem> rawItems, List<ItemStack> searchItems,
+                           Map<Item, Long> needByItem,
                            Map<Item, Set<Item>> primaryRaw, long version) {
     }
 
     private static final org.slf4j.Logger LOGGER =
             org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
 
-    private static final Snapshot EMPTY = new Snapshot(List.of(), List.of(), Map.of(), 0);
+    private static final Snapshot EMPTY = new Snapshot(List.of(), List.of(), Map.of(), Map.of(), 0);
 
     private static volatile Snapshot snapshot = EMPTY;
     private static volatile boolean dirty = true;
@@ -109,6 +111,17 @@ public final class MaterialWatchlist {
                     searchSeen.add(stack.getItem());
                 }
             }
+            // 需求量（够用就停的预算用）：一级缺失 + 绿色高亮同源（二级材料也算），同一物品取较大值
+            Map<Item, Long> needByItem = new HashMap<>();
+            for (MaterialListEntry entry : rows) {
+                if (entry == null || entry.getStack() == null || entry.getStack().isEmpty()) {
+                    continue;
+                }
+                int missing = Math.max(0, entry.getCountMissing());
+                if (missing > 0) {
+                    needByItem.merge(entry.getStack().getItem(), (long) missing, Math::max);
+                }
+            }
             int primaryCount = searchItems.size();
             try {
                 Map<Item, Long> highlightNeed = FillMaterialCalculator.getCurrentViewMissingForHighlight();
@@ -119,13 +132,14 @@ public final class MaterialWatchlist {
                     if (searchSeen.add(entry.getKey())) {
                         searchItems.add(new ItemStack(entry.getKey()));
                     }
+                    needByItem.merge(entry.getKey(), entry.getValue(), Math::max);
                 }
             } catch (Throwable ignored) {
                 // 高亮口径算不出来（材料列表没建好等）⇒ 退回只用一级缺失
             }
 
             snapshot = new Snapshot(List.copyOf(rawItems), List.copyOf(searchItems),
-                    plan.primaryRaw(), ++version);
+                    Map.copyOf(needByItem), plan.primaryRaw(), ++version);
             dirty = false;
             lastRefreshMs = System.currentTimeMillis();
             LOGGER.info("[material-scan] 清单刷新：{} ms｜原料 {} 种、箱子搜索 {} 项（缺料行 {}，其中一级 {} + 二级 {}）",

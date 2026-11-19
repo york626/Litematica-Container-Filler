@@ -1,5 +1,6 @@
 package com.mimicenzymes.litematicafiller.scan;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
@@ -15,6 +16,7 @@ import red.jackf.whereisit.client.render.Rendering;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -60,8 +62,8 @@ public final class WhereIsItBridge {
         return available;
     }
 
-    /** 用缺料清单触发一次 WhereIsIt 搜索；返回是否真的发出。 */
-    public static boolean search(List<ItemStack> items) {
+    /** 用缺料清单触发一次 WhereIsIt 搜索；{@code need} 是「够用就停」的预算，返回是否真的发出。 */
+    public static boolean search(List<ItemStack> items, Map<Item, Long> need) {
         if (items == null || items.isEmpty() || !isAvailable()) {
             return false;
         }
@@ -98,12 +100,16 @@ public final class WhereIsItBridge {
             CurrentGradientHolder.refreshColourScheme();
             // 有 Litematica 选区时只保留选区内的容器（双箱只选一半也算整箱），
             // 没有选区不过滤。过滤在“结果进渲染”这一步做，搜索本身仍然全量。
+            // 之后再过「够用就停」预算：按距离从近到远扣需求量，够了就不亮后面的箱子。
+            HighlightBudget budget = new HighlightBudget(need, MinecraftClient.getInstance());
             boolean result = SearchInvoker.EVENT.invoker().search(request,
-                    results -> OnResult.EVENT.invoker().onResults(SelectionFilter.filter(results)));
+                    results -> OnResult.EVENT.invoker().onResults(
+                            budget.filter(SelectionFilter.filter(results))));
             int selectionBoxes = SelectionFilter.boxCount();
-            LOGGER.info("[material-scan] 箱子外框搜索：{} 种物品（来源 {} 项）→ AnyOf {} 条判据，结果={}，选区={}",
+            LOGGER.info("[material-scan] 箱子外框搜索：{} 种物品（来源 {} 项）→ AnyOf {} 条判据，结果={}，选区={}，预算={} 种",
                     seen.size(), items.size(), criteria.size(), result,
-                    selectionBoxes == 0 ? "无（不过滤）" : selectionBoxes + " 个盒");
+                    selectionBoxes == 0 ? "无（不过滤）" : selectionBoxes + " 个盒",
+                    need == null ? 0 : need.size());
             return result;
         } catch (Throwable t) {
             LOGGER.warn("[material-scan] 箱子外框搜索失败：{}", t.toString());

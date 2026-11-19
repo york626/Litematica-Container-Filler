@@ -199,7 +199,8 @@ public final class NearbyMaterialScanner {
                 chestTimer = Math.max(40, Configs.MATERIAL_SCAN_CHEST_INTERVAL.getIntegerValue());
                 List<ItemStack> searchItems = MaterialWatchlist.snapshot().searchItems();
                 if (!searchItems.isEmpty()) {
-                    WhereIsItBridge.search(searchItems);
+                    // 第二参数 = 「够用就停」的预算（按缺失数量），避免两个都够的箱子全亮
+                    WhereIsItBridge.search(searchItems, MaterialWatchlist.snapshot().needByItem());
                 }
             }
         }
