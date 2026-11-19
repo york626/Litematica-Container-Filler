@@ -1,18 +1,25 @@
 package com.mimicenzymes.litematicafiller.compat.sbp;
 
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackStorage;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper;
+import net.p3pp3rf1y.sophisticatedbackpacks.network.RequestBackpackInventoryContentsPayload;
 import net.p3pp3rf1y.sophisticatedbackpacks.util.PlayerInventoryProvider;
 import net.p3pp3rf1y.sophisticatedcore.inventory.ITrackedContentsItemHandler;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * 【已有量口径】客户端只读：把**身上所有精妙背包**（穿戴 + 携带）里的物品数量汇总出来
@@ -87,4 +94,97 @@ public final class SbpClientInventory {
         slotCountGetter = handlerClass.getMethod("getSlotCount");
         slotStackGetter = handlerClass.getMethod("getSlotStack", int.class);
     }
+
+    // ---------------------------------------------------------------- 客户端镜像同步
+
+    /**
+     * 切维度后精妙背包的**客户端内容镜像**会失效（Ray 2026-11-19：下界回主世界后材料列表认不到
+     * 背包里的材料，打开一次背包才恢复）。这里主动向服务端要一次背包内容：
+     * <ul>
+     *   <li>维度变化 ⇒ 立即请求（不管镜像空不空，可能只是旧数据）；</li>
+     *   <li>平时每 5 秒兜底检查一次：镜像还是空的就再请求（3 秒节流）。</li>
+     * </ul>
+     * 请求是 SBP 自己的 `RequestBackpackInventoryContentsPayload`（客户端悬停/开背包时发的同款），
+     * 服务端回包后 SBP 会更新 {@code BackpackStorage.clientStorageCopy} ⇒ 材料列表/高亮恢复识别。
+     */
+    public static void tick(MinecraftClient client) {
+        if (!SbpSupport.available() || client == null || client.player == null || client.world == null) {
+            return;
+        }
+        String dimension = client.world.getRegistryKey().getValue().toString();
+        boolean dimensionChanged = lastDimension != null && !lastDimension.equals(dimension);
+        lastDimension = dimension;
+        long now = System.currentTimeMillis();
+        if (dimensionChanged) {
+            lastPeriodicMs = now;
+            requestWornSync(client);
+        } else if (now - lastPeriodicMs >= 5000L) {
+            lastPeriodicMs = now;
+            requestWornSync(client, true);
+        }
+    }
+
+    private static void requestWornSync(MinecraftClient client) {
+        requestWornSync(client, false);
+    }
+
+    /**
+     * @param onlyIfEmpty true = 只在客户端镜像为空时请求（平时兜底）；false = 强制请求（切维度时）
+     */
+    private static void requestWornSync(MinecraftClient client, boolean onlyIfEmpty) {
+        try {
+            PlayerInventoryProvider.get().runOnBackpacks(client.player,
+                    (backpackStack, invIdentifier, identifier, slot) -> {
+                        if (invIdentifier == null || !"trinkets".equals(invIdentifier)) {
+                            return false;   // 只处理穿戴的那一个（携带的在主背包里，切维度不受影响）
+                        }
+                        try {
+                            IBackpackWrapper wrapper = BackpackWrapper.fromStack(backpackStack);
+                            Optional<UUID> uuid = contentsUuid(wrapper);
+                            if (uuid.isEmpty()) {
+                                return false;
+                            }
+                            if (onlyIfEmpty) {
+                                NbtCompound contents = BackpackStorage.get()
+                                        .getOrCreateBackpackContents(uuid.get());
+                                if (contents != null && !contents.isEmpty()) {
+                                    return false;
+                                }
+                            }
+                            long now = System.currentTimeMillis();
+                            Long last = lastRequestAt.get(uuid.get());
+                            if (last != null && now - last < 3000L) {
+                                return false;
+                            }
+                            lastRequestAt.put(uuid.get(), now);
+                            ClientPlayNetworking.send(
+                                    new RequestBackpackInventoryContentsPayload(uuid.get()));
+                            LOGGER.info("[sbp] 请求同步穿戴背包内容（切维度/镜像为空）uuid={}", uuid.get());
+                        } catch (Throwable ignored) {
+                        }
+                        return false;
+                    });
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** `BackpackWrapper.getContentsUuid()`（IBackpackWrapper 上没有 ⇒ 对它反射）。 */
+    private static Optional<UUID> contentsUuid(IBackpackWrapper wrapper) {
+        try {
+            Method method = wrapper.getClass().getMethod("getContentsUuid");
+            Object value = method.invoke(wrapper);
+            if (value instanceof Optional<?> optional && optional.isPresent()
+                    && optional.get() instanceof UUID uuid) {
+                return Optional.of(uuid);
+            }
+        } catch (Throwable ignored) {
+        }
+        return Optional.empty();
+    }
+
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
+    private static String lastDimension;
+    private static long lastPeriodicMs = 0L;
+    private static final Map<UUID, Long> lastRequestAt = new HashMap<>();
 }
