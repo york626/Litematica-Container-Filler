@@ -122,12 +122,19 @@ public final class SbpClientInventory {
             lastWornUuid = worn;
         }
 
+        // ⭐ v1.22.9：SBP 的客户端镜像会**反复闪空**（切维度、周期重同步都会清一下；日志实测
+        //   20:24:09 / 20:24:59 两次空窗）。材料列表每次重算正好撞上空窗就显示“认不到”。
+        //   这里缓存“上次完整内容”，一发现镜像变空就**立即补回去**；真正的新包到了会覆盖。
+        if (lastWornUuid != null) {
+            keepOrRestoreCopy(lastWornUuid);
+        }
+
         if (dimensionChanged) {
             // ⭐ v1.22.7：切维度后头 30 秒**每 2 秒重试**（v1.22.6 只发一次，服务端/trinket 还没就绪
         //   ⇒ 要等很久的 5 秒兜底才成功；Ray 实测切回主世界仍是“认不到”）。
             forceSyncUntil = now + 30000L;
             lastPeriodicMs = now;
-            diagUntil = now + 60000L;   // v1.22.8：切维度后 60 秒只读诊断
+            diagUntil = now + 30000L;   // v1.22.8：切维度后 30 秒只读诊断
             lastDiagAt = 0L;
             requestSync(lastWornUuid);
         } else if (now < forceSyncUntil) {
@@ -138,11 +145,32 @@ public final class SbpClientInventory {
                 requestSync(lastWornUuid);
             }
         }
-        // 【只读诊断】切维度后 60 秒，每 2 秒看一眼：客户端镜像有没有内容、
+        // 【只读诊断】切维度后 30 秒，每 2 秒看一眼：客户端镜像有没有内容、
         // Litematica 自己的统计口径（getInventoryItemCounts）认不认背包、我们自己的快照认不认。
         if (now < diagUntil && now - lastDiagAt >= 2000L) {
             lastDiagAt = now;
             logDiagnostics(client);
+        }
+    }
+
+    /** 镜像有内容 ⇒ 缓存（2 秒最多拷一次，背包 NBT 可能很大）；镜像被清空 ⇒ 用上次内容补回去。 */
+    private static void keepOrRestoreCopy(UUID uuid) {
+        try {
+            NbtCompound current = BackpackStorage.get().getOrCreateBackpackContents(uuid);
+            long now = System.currentTimeMillis();
+            if (current != null && !current.isEmpty()) {
+                if (now - lastCopyCacheMs >= 2000L) {
+                    lastCopyCacheMs = now;
+                    lastGoodCopy.put(uuid, current.copy());
+                }
+                return;
+            }
+            NbtCompound cached = lastGoodCopy.get(uuid);
+            if (cached != null) {
+                BackpackStorage.get().setBackpackContents(uuid, cached.copy());
+                LOGGER.info("[sbp] 镜像被清空，已用上次内容兜底（{} 个键）uuid={}", cached.getSize(), uuid);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -255,5 +283,8 @@ public final class SbpClientInventory {
     private static long lastDiagAt = 0L;
     /** 上一次找到的穿戴背包 UUID（切维度刚开始 trinket 数据没同步时用它兜底）。 */
     private static UUID lastWornUuid;
+    /** 每个背包最后一次「非空」的客户端镜像内容；镜像被人清空时用它补回去（v1.22.9）。 */
+    private static final Map<UUID, NbtCompound> lastGoodCopy = new HashMap<>();
+    private static long lastCopyCacheMs = 0L;
     private static final Map<UUID, Long> lastRequestAt = new HashMap<>();
 }
