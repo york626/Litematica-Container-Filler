@@ -115,57 +115,79 @@ public final class SbpClientInventory {
         boolean dimensionChanged = lastDimension != null && !lastDimension.equals(dimension);
         lastDimension = dimension;
         long now = System.currentTimeMillis();
+
+        // 每次尽量更新「穿戴背包的 UUID」；切维度刚开始 trinket 数据可能还没同步 ⇒ 用上一次的兜底。
+        UUID worn = findWornUuid(client);
+        if (worn != null) {
+            lastWornUuid = worn;
+        }
+
         if (dimensionChanged) {
+            // ⭐ v1.22.7：切维度后头 30 秒**每 2 秒重试**（v1.22.6 只发一次，服务端/trinket 还没就绪
+        //   ⇒ 要等很久的 5 秒兜底才成功；Ray 实测切回主世界仍是“认不到”）。
+            forceSyncUntil = now + 30000L;
             lastPeriodicMs = now;
-            requestWornSync(client);
+            requestSync(lastWornUuid);
+        } else if (now < forceSyncUntil) {
+            requestSync(lastWornUuid);
         } else if (now - lastPeriodicMs >= 5000L) {
             lastPeriodicMs = now;
-            requestWornSync(client, true);
+            if (lastWornUuid != null && contentsEmpty(lastWornUuid)) {
+                requestSync(lastWornUuid);
+            }
         }
     }
 
-    private static void requestWornSync(MinecraftClient client) {
-        requestWornSync(client, false);
+    /** 发一次 SBP 自己的「背包内容同步请求」（2 秒节流）。 */
+    private static void requestSync(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Long last = lastRequestAt.get(uuid);
+        if (last != null && now - last < 2000L) {
+            return;
+        }
+        lastRequestAt.put(uuid, now);
+        try {
+            ClientPlayNetworking.send(new RequestBackpackInventoryContentsPayload(uuid));
+            LOGGER.info("[sbp] 请求同步穿戴背包内容（切维度/镜像为空）uuid={}", uuid);
+        } catch (Throwable ignored) {
+        }
     }
 
-    /**
-     * @param onlyIfEmpty true = 只在客户端镜像为空时请求（平时兜底）；false = 强制请求（切维度时）
-     */
-    private static void requestWornSync(MinecraftClient client, boolean onlyIfEmpty) {
+    private static boolean contentsEmpty(UUID uuid) {
+        try {
+            NbtCompound contents = BackpackStorage.get().getOrCreateBackpackContents(uuid);
+            return contents == null || contents.isEmpty();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 找穿戴在 trinkets 槽里的背包 UUID（找不到返回 null）。 */
+    private static UUID findWornUuid(MinecraftClient client) {
+        UUID[] found = {null};
         try {
             PlayerInventoryProvider.get().runOnBackpacks(client.player,
                     (backpackStack, invIdentifier, identifier, slot) -> {
                         if (invIdentifier == null || !"trinkets".equals(invIdentifier)) {
-                            return false;   // 只处理穿戴的那一个（携带的在主背包里，切维度不受影响）
+                            return false;   // 只处理穿戴的那一个（携带在主背包里的切维度不受影响）
                         }
                         try {
                             IBackpackWrapper wrapper = BackpackWrapper.fromStack(backpackStack);
                             Optional<UUID> uuid = contentsUuid(wrapper);
-                            if (uuid.isEmpty()) {
-                                return false;
+                            if (uuid.isPresent()) {
+                                found[0] = uuid.get();
+                                return true;   // 找到一个就够了
                             }
-                            if (onlyIfEmpty) {
-                                NbtCompound contents = BackpackStorage.get()
-                                        .getOrCreateBackpackContents(uuid.get());
-                                if (contents != null && !contents.isEmpty()) {
-                                    return false;
-                                }
-                            }
-                            long now = System.currentTimeMillis();
-                            Long last = lastRequestAt.get(uuid.get());
-                            if (last != null && now - last < 3000L) {
-                                return false;
-                            }
-                            lastRequestAt.put(uuid.get(), now);
-                            ClientPlayNetworking.send(
-                                    new RequestBackpackInventoryContentsPayload(uuid.get()));
-                            LOGGER.info("[sbp] 请求同步穿戴背包内容（切维度/镜像为空）uuid={}", uuid.get());
                         } catch (Throwable ignored) {
                         }
                         return false;
                     });
         } catch (Throwable ignored) {
         }
+        return found[0];
     }
 
     /** `BackpackWrapper.getContentsUuid()`（IBackpackWrapper 上没有 ⇒ 对它反射）。 */
@@ -186,5 +208,9 @@ public final class SbpClientInventory {
             org.slf4j.LoggerFactory.getLogger("litematica_container_filler");
     private static String lastDimension;
     private static long lastPeriodicMs = 0L;
+    /** 切维度后强制重试的截止时间（30 秒内每 2 秒发一次）。 */
+    private static long forceSyncUntil = 0L;
+    /** 上一次找到的穿戴背包 UUID（切维度刚开始 trinket 数据没同步时用它兜底）。 */
+    private static UUID lastWornUuid;
     private static final Map<UUID, Long> lastRequestAt = new HashMap<>();
 }
