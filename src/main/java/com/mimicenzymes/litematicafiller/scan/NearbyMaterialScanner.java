@@ -192,9 +192,10 @@ public final class NearbyMaterialScanner {
                 chestDiagTimer = 40;
                 logLookingContainerDiag(client);
             }
-            if (client.currentScreen != null) {
-                chestTimer = 0;
-            } else if (chestTimer-- <= 0) {
+            // 界面开着也照常刷新：v1.21.23 起搜索自己走 WhereIsIt 的公开事件、不经过
+            // “找到结果就关界面”，所以不会再顶掉 Ray 的界面；不刷的话结果 5 秒淡出、
+            // 25 秒清空 ⇒ 打开箱子时外框就灭了（2026-11-19 实测）。
+            if (chestTimer-- <= 0) {
                 chestTimer = Math.max(40, Configs.MATERIAL_SCAN_CHEST_INTERVAL.getIntegerValue());
                 List<ItemStack> searchItems = MaterialWatchlist.snapshot().searchItems();
                 if (!searchItems.isEmpty()) {
@@ -221,19 +222,41 @@ public final class NearbyMaterialScanner {
             return;
         }
         BlockPos pos = hit.getBlockPos();
-        if (!(client.world.getBlockEntity(pos) instanceof Inventory inventory)) {
+        // 客户端方块实体的 Inventory 永远是空的（内容只在 ScreenHandler 里）⇒
+        // 有界面时读界面槽位，没界面才退回区块实体。
+        List<ItemStack> stacks = new ArrayList<>();
+        int totalSlots;
+        if (client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?> handledScreen) {
+            totalSlots = handledScreen.getScreenHandler().slots.size();
+            for (net.minecraft.screen.slot.Slot slot : handledScreen.getScreenHandler().slots) {
+                stacks.add(slot.getStack());
+            }
+        } else if (client.world.getBlockEntity(pos) instanceof Inventory inventory) {
+            totalSlots = inventory.size();
+            for (int i = 0; i < totalSlots; i++) {
+                stacks.add(inventory.getStack(i));
+            }
+        } else {
             return;
         }
         int nonEmpty = 0;
         List<String> hits = new ArrayList<>();
-        for (int i = 0; i < inventory.size(); i++) {
-            ItemStack stack = inventory.getStack(i);
+        List<String> highlightNeeds = new ArrayList<>();
+        java.util.Set<Item> seenItems = new java.util.HashSet<>();
+        for (ItemStack stack : stacks) {
             if (stack.isEmpty()) {
                 continue;
             }
             nonEmpty++;
+            Item item = stack.getItem();
             if (WhereIsItBridge.matches(stack)) {
-                hits.add(Registries.ITEM.getId(stack.getItem()) + "×" + stack.getCount());
+                hits.add(Registries.ITEM.getId(item) + "×" + stack.getCount());
+            }
+            if (seenItems.add(item)) {
+                long need = com.mimicenzymes.litematicafiller.materials.MaterialHighlightState.needOf(item);
+                if (need > 0L) {
+                    highlightNeeds.add(Registries.ITEM.getId(item) + "×" + need);
+                }
             }
         }
         int resultCount = WhereIsItBridge.resultCount();
@@ -244,11 +267,13 @@ public final class NearbyMaterialScanner {
         }
         lastChestDiag = signature;
         double distance = Math.sqrt(client.player.getBlockPos().getSquaredDistance(pos));
-        LOGGER.info("[material-scan] 外框诊断：准星容器 {} 距离 {} 格｜WhereIsIt 结果 {} 个｜该容器在结果里={}｜槽位 {}，非空 {}，命中搜索条件 {} 个：{}",
+        LOGGER.info("[material-scan] 外框诊断：准星容器 {} 距离 {} 格｜WhereIsIt 结果 {} 个｜该容器在结果里={}｜槽位 {}，非空 {}｜命中搜索条件 {} 个：{}｜绿色高亮认为还缺 {} 个：{}",
                 pos.toShortString(), String.format("%.1f", distance), resultCount, inResults,
-                inventory.size(), nonEmpty, hits.size(),
-                hits.isEmpty() ? "（无 —— 材料列表当前视图不含这些物品）"
-                        : String.join("、", hits.subList(0, Math.min(8, hits.size()))));
+                totalSlots, nonEmpty, hits.size(),
+                hits.isEmpty() ? "（无）" : String.join("、", hits.subList(0, Math.min(8, hits.size()))),
+                highlightNeeds.size(),
+                highlightNeeds.isEmpty() ? "（无）"
+                        : String.join("、", highlightNeeds.subList(0, Math.min(8, highlightNeeds.size()))));
     }
 
     // ---------------------------------------------------------------- 扫描

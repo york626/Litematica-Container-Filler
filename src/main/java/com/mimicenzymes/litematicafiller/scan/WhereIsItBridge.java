@@ -6,8 +6,10 @@ import net.minecraft.util.math.BlockPos;
 import red.jackf.whereisit.api.SearchRequest;
 import red.jackf.whereisit.api.criteria.Criterion;
 import red.jackf.whereisit.api.criteria.builtin.AnyOfCriterion;
+import red.jackf.whereisit.client.api.events.OnResult;
 import red.jackf.whereisit.client.api.events.SearchInvoker;
 import red.jackf.whereisit.client.api.events.SearchRequestPopulator;
+import red.jackf.whereisit.client.render.CurrentGradientHolder;
 import red.jackf.whereisit.client.render.Rendering;
 
 import java.util.ArrayList;
@@ -37,10 +39,6 @@ public final class WhereIsItBridge {
 
     private static Boolean available;
 
-    /** 背景搜索后「抑制 WhereIsIt 槽位高亮」的截止时间（ms）。 */
-    private static long suppressSlotHighlightUntilMs = 0L;
-    /** 抑制窗口：覆盖 WhereIsIt 服务端回包把 lastRequest 再设回来（通常 1~2 tick）。 */
-    private static final long SUPPRESS_WINDOW_MS = 3000L;
     /** 最近一次背景搜索用的请求（只读诊断：核对“箱子里的东西到底在不在搜索条件里”）。 */
     private static volatile SearchRequest lastRequest;
 
@@ -92,10 +90,14 @@ public final class WhereIsItBridge {
             SearchRequest request = new SearchRequest();
             request.accept(new AnyOfCriterion(criteria).compact());
             lastRequest = request;
-            boolean result = SearchInvoker.doSearch(request);
-            // 背景搜索只负责世界外框；打开界面后的槽位高亮交给 CF 自己的「材料高亮」
-            // （只闪够用的盒子、跳过玩家背包/精妙背包界面）。这里开启抑制窗口。
-            suppressSlotHighlightUntilMs = System.currentTimeMillis() + SUPPRESS_WINDOW_MS;
+            // ⛔ 不走 WhereIsItClient.doSearch：它搜到结果会主动关界面（close_gui_on_found_results）。
+            //    这里自己走公开事件，等价于 doSearch（重置淡出计时 / 清旧结果 / 刷配色 / 把结果
+            //    交给 OnResult 进渲染），但**不会关界面** ⇒ 打开箱子时外框也能持续刷新。
+            Rendering.resetSearchTime();
+            Rendering.clearResults();
+            CurrentGradientHolder.refreshColourScheme();
+            boolean result = SearchInvoker.EVENT.invoker().search(request,
+                    results -> OnResult.EVENT.invoker().onResults(results));
             LOGGER.info("[material-scan] 箱子外框搜索：{} 种物品（来源 {} 项）→ AnyOf {} 条判据，结果={}",
                     seen.size(), items.size(), criteria.size(), result);
             return result;
@@ -113,16 +115,12 @@ public final class WhereIsItBridge {
      * 两个现象都是 WhereIsIt 的 `Rendering.renderSlotHighlight`：它拿 `lastRequest`
      * 把**任何界面**（玩家背包、精妙背包、箱子）里匹配的槽位全涂黄，而且不看数量。
      *
-     * <p>做法：背景搜索后的 {@link #SUPPRESS_WINDOW_MS} 内每 tick 把 `lastRequest` 清掉
-     * （WhereIsIt 服务端回包会再设回来，所以必须持续清）。窗口之外不动 —— 玩家自己在
-     * 容器界面里手动发的 WhereIsIt 搜索仍然照常高亮槽位。
+     * <p>做法：**每 tick** 把 `lastRequest` 清掉 —— WhereIsIt 服务端回包会再设回来，
+     * 而且现在界面开着也每 5 秒重新搜索，只清一次根本压不住。容器里的槽位提示走 CF
+     * 自己的绿色「材料高亮」（按缺失数量、一盒够只闪一盒）。
      */
     public static void suppressSlotHighlights() {
-        if (suppressSlotHighlightUntilMs == 0L || !isAvailable()) {
-            return;
-        }
-        if (System.currentTimeMillis() >= suppressSlotHighlightUntilMs) {
-            suppressSlotHighlightUntilMs = 0L;
+        if (!isAvailable()) {
             return;
         }
         try {

@@ -63,6 +63,12 @@ public final class MaterialHighlightState {
         return needed.size();
     }
 
+    /** 某物品当前被「材料高亮」认为还缺多少（诊断用；0 = 不在高亮表里）。 */
+    public static long needOf(Item item) {
+        Long need = needed.get(item);
+        return need == null ? 0L : need;
+    }
+
     /** 每帧拿一份可扣减的副本（不污染冻结的原表）。 */
     public static Map<Item, Long> copyCounts() {
         return new HashMap<>(needed);
