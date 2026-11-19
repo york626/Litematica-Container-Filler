@@ -43,6 +43,8 @@ public class LitematicaContainerFillerClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.tool.AutoCollectController.getInstance().tick(client));
         // 【野外材料感知】附近缺料扫描 + 聊天提示 + 箱子外框（Ray 2026-11-18 P1）
         ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.scan.NearbyMaterialScanner.tick(client));
+        // 【设置箱子追踪库存】选区容器 → 箱子追踪记忆（Ray 2026-11-19）
+        ClientTickEvents.END_CLIENT_TICK.register(client -> com.mimicenzymes.litematicafiller.scan.ChestTrackerInventoryScanner.tick(client));
         com.mimicenzymes.litematicafiller.scan.MaterialScanCommand.register();
         // 独立 HUD 面板（不碰 Litematica 材料列表本体，避免两态打架）；
         // ⚠️ 只记账不画：真正绘制在 GameRenderer 尾部（状态效果图标/材料列表之后），否则会被信标图标压住。

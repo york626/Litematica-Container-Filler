@@ -495,5 +495,7 @@
   "litematica_container_filler.config.name.materialScanBlacklist": "野外扫描黑名单",
   "litematica_container_filler.config.comment.materialScanBlacklist": "不参与附近提示/箱子搜索的物品 ID（如 minecraft:stone）。默认空；聊天里点 [拉黑] 会自动加进来，也可用 /lcf scan blacklist add|remove 管理。",
   "litematica_container_filler.hotkey.name.materialScanToggle": "野外材料感知开关",
-  "litematica_container_filler.hotkey.comment.materialScanToggle": "按一下切换野外材料感知（默认未绑定）。开：扫描附近缺料并在聊天提示；关：停止提示和箱子搜索。"
+  "litematica_container_filler.hotkey.comment.materialScanToggle": "按一下切换野外材料感知（默认未绑定）。开：扫描附近缺料并在聊天提示；关：停止提示和箱子搜索。",
+  "litematica_container_filler.hotkey.name.chestTrackerInventorySet": "设置箱子追踪库存",
+  "litematica_container_filler.hotkey.comment.chestTrackerInventorySet": "把当前 Litematica 选区里的容器内容直接写进【箱子追踪】记忆（不用手动开箱），之后箱子外框搜索就能找到它们。默认未绑定；单人/集成服务端可用（不弹界面、不闪屏）。"
 }

@@ -23,6 +23,8 @@ public class Hotkeys {
     public static final ConfigHotkey EXTRACT_SECONDARY_MATERIALS = new ConfigHotkey("litematica_container_filler.hotkey.name.extractSecondaryMaterials", "", "litematica_container_filler.hotkey.comment.extractSecondaryMaterials");
     /** 【野外材料感知】开关（2026-11-18；默认未绑定，按一下切换）。 */
     public static final ConfigHotkey MATERIAL_SCAN_TOGGLE = new ConfigHotkey("litematica_container_filler.hotkey.name.materialScanToggle", "", "litematica_container_filler.hotkey.comment.materialScanToggle");
+    /** 【设置箱子追踪库存】把选区里的容器内容写进箱子追踪记忆（2026-11-19；默认未绑定）。 */
+    public static final ConfigHotkey CHEST_TRACKER_INVENTORY_SET = new ConfigHotkey("litematica_container_filler.hotkey.name.chestTrackerInventorySet", "", "litematica_container_filler.hotkey.comment.chestTrackerInventorySet");
 
     public static final List<ConfigHotkey> HOTKEY_LIST = ImmutableList.of(
             OPEN_CONFIG_GUI,
@@ -37,6 +39,7 @@ public class Hotkeys {
             BATCH_TOOL_CANCEL,
             AUTO_COLLECT_TRIGGER,
             EXTRACT_SECONDARY_MATERIALS,
-            MATERIAL_SCAN_TOGGLE
+            MATERIAL_SCAN_TOGGLE,
+            CHEST_TRACKER_INVENTORY_SET
     );
 }
