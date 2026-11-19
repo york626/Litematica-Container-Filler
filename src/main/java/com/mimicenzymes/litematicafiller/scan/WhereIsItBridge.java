@@ -96,10 +96,14 @@ public final class WhereIsItBridge {
             Rendering.resetSearchTime();
             Rendering.clearResults();
             CurrentGradientHolder.refreshColourScheme();
+            // 有 Litematica 选区时只保留选区内的容器（双箱只选一半也算整箱），
+            // 没有选区不过滤。过滤在“结果进渲染”这一步做，搜索本身仍然全量。
             boolean result = SearchInvoker.EVENT.invoker().search(request,
-                    results -> OnResult.EVENT.invoker().onResults(results));
-            LOGGER.info("[material-scan] 箱子外框搜索：{} 种物品（来源 {} 项）→ AnyOf {} 条判据，结果={}",
-                    seen.size(), items.size(), criteria.size(), result);
+                    results -> OnResult.EVENT.invoker().onResults(SelectionFilter.filter(results)));
+            int selectionBoxes = SelectionFilter.boxCount();
+            LOGGER.info("[material-scan] 箱子外框搜索：{} 种物品（来源 {} 项）→ AnyOf {} 条判据，结果={}，选区={}",
+                    seen.size(), items.size(), criteria.size(), result,
+                    selectionBoxes == 0 ? "无（不过滤）" : selectionBoxes + " 个盒");
             return result;
         } catch (Throwable t) {
             LOGGER.warn("[material-scan] 箱子外框搜索失败：{}", t.toString());
