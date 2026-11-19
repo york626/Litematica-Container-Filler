@@ -127,6 +127,8 @@ public final class SbpClientInventory {
         //   ⇒ 要等很久的 5 秒兜底才成功；Ray 实测切回主世界仍是“认不到”）。
             forceSyncUntil = now + 30000L;
             lastPeriodicMs = now;
+            diagUntil = now + 60000L;   // v1.22.8：切维度后 60 秒只读诊断
+            lastDiagAt = 0L;
             requestSync(lastWornUuid);
         } else if (now < forceSyncUntil) {
             requestSync(lastWornUuid);
@@ -135,6 +137,44 @@ public final class SbpClientInventory {
             if (lastWornUuid != null && contentsEmpty(lastWornUuid)) {
                 requestSync(lastWornUuid);
             }
+        }
+        // 【只读诊断】切维度后 60 秒，每 2 秒看一眼：客户端镜像有没有内容、
+        // Litematica 自己的统计口径（getInventoryItemCounts）认不认背包、我们自己的快照认不认。
+        if (now < diagUntil && now - lastDiagAt >= 2000L) {
+            lastDiagAt = now;
+            logDiagnostics(client);
+        }
+    }
+
+    private static void logDiagnostics(MinecraftClient client) {
+        try {
+            UUID uuid = lastWornUuid;
+            boolean copyHas = uuid != null && !contentsEmpty(uuid);
+            int copyKeys = 0;
+            if (uuid != null) {
+                NbtCompound contents = BackpackStorage.get().getOrCreateBackpackContents(uuid);
+                copyKeys = contents == null ? 0 : contents.getSize();
+            }
+            int sticksApi = countApi(client, net.minecraft.item.Items.STICK);
+            int planksApi = countApi(client, net.minecraft.item.Items.ACACIA_PLANKS);
+            Map<Item, Long> snapshot = snapshot(client.player);
+            LOGGER.info("[sbp-diag] 镜像={}（{} 个键）｜Litematica 统计算术(木棍)={}、金合欢木板={}｜SBP 快照(木棍)={}、金合欢木板={}",
+                    copyHas ? "有" : "空", copyKeys,
+                    sticksApi, planksApi,
+                    snapshot.getOrDefault(net.minecraft.item.Items.STICK, 0L),
+                    snapshot.getOrDefault(net.minecraft.item.Items.ACACIA_PLANKS, 0L));
+        } catch (Throwable t) {
+            LOGGER.warn("[sbp-diag] 诊断输出失败：{}", t.toString());
+        }
+    }
+
+    private static int countApi(MinecraftClient client, Item item) {
+        try {
+            var counts = fi.dy.masa.litematica.materials.MaterialListUtils
+                    .getInventoryItemCounts(client.player.getInventory());
+            return counts.getInt(new fi.dy.masa.malilib.util.ItemType(new ItemStack(item), true, false));
+        } catch (Throwable t) {
+            return -1;
         }
     }
 
@@ -210,6 +250,9 @@ public final class SbpClientInventory {
     private static long lastPeriodicMs = 0L;
     /** 切维度后强制重试的截止时间（30 秒内每 2 秒发一次）。 */
     private static long forceSyncUntil = 0L;
+    /** 【只读诊断】切维度后 60 秒内的诊断截止时间 / 上次输出时刻。 */
+    private static long diagUntil = 0L;
+    private static long lastDiagAt = 0L;
     /** 上一次找到的穿戴背包 UUID（切维度刚开始 trinket 数据没同步时用它兜底）。 */
     private static UUID lastWornUuid;
     private static final Map<UUID, Long> lastRequestAt = new HashMap<>();
