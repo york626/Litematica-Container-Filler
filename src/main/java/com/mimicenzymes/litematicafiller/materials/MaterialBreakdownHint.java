@@ -189,19 +189,18 @@ public final class MaterialBreakdownHint {
 
                 String name = new ItemStack(part.item).getName().getString();
                 if (!firstPart) {
-                    text.append(" + ");
+                    text.append('+');
                 }
-                // 数量规格跟原版材料列表一致（总数 + 组数 x 堆叠 + 余数），只是**不带括号**（Ray 2026-11-08 要的）：
-                // 例：684 冰 → `← 684 冰 10 x 64 + 44`。多原料时省略组数换算，否则一行放不下。
-                text.append(shown).append(' ').append(name);
+                // 数量规格跟原版材料列表一致（总数 + 组数 x 堆叠 + 余数），只是**不带括号**（Ray 2026-11-08 要的）。
+                // ⭐ v1.22.4-Ray（Ray 2026-11-19）：颜色按**整单总需**判（见上面 judgeNeed），显示改成
+                //   `本行用量/整单`：`←2/34锁链+6/7去皮竹块`（紧凑、无空格；总需=本行时只显示 `2锁链`）。
+                text.append(shown);
+                if (judgeNeed > need) {
+                    text.append('/').append(judgeNeed);
+                }
+                text.append(name);
                 if (hint.parts.size() == 1) {
                     text.append(stackBreakdown(shown, part.item));
-                }
-                // ⭐ v1.22.3-Ray（Ray 2026-11-19）：颜色按**整单总需**判（见上面 judgeNeed），但之前只显示
-                //   本行用量（例：2 锁链）⇒ 「有 7 个却还是灰」看不懂。总需大于本行用量时补一句
-                //   `（整单 34）`，让数字和颜色对得上。
-                if (judgeNeed > need) {
-                    text.append("（整单 ").append(judgeNeed).append("）");
                 }
                 if (firstPart) {
                     firstAvailable = available;
@@ -394,7 +393,7 @@ public final class MaterialBreakdownHint {
         if (maxStack <= 0 || count <= maxStack) {
             return "";
         }
-        return " " + formatCount(count, maxStack);
+        return formatCount(count, maxStack);
     }
 
     /**
