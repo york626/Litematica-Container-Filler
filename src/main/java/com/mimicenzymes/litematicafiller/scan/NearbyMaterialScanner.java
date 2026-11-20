@@ -69,12 +69,6 @@ public final class NearbyMaterialScanner {
     /** 只读诊断：准星容器上一次打过的判据签名（不变就不重复打）。 */
     private static String lastChestDiag = "";
     private static int scanCooldown = 0;
-    /** 【P2】上一轮展示的资源簇点数（变化才打日志）。 */
-    private static int lastClusterCount = 0;
-    /** 【P2】资源点是否已经清空过（避免每 tick 调 Xaero）。 */
-    private static boolean clusterWaypointsCleared = true;
-    /** 【P2】上次灌进 Xaero 的点签名（没变就不重复 clear+add）。 */
-    private static String lastClusterSignature = "";
     /** 进世界后先等 40 tick（2 秒）再开始扫描/展开，避免进游戏时抢主线程。 */
     private static int joinGraceTicks = 0;
     private static Object lastWorld;
@@ -140,8 +134,6 @@ public final class NearbyMaterialScanner {
 
         if (!Configs.ENABLE_MOD.getBooleanValue() || !Configs.MATERIAL_SCAN_ENABLED.getBooleanValue()) {
             resetCycle();
-            MaterialClusters.save();
-            clearClusterWaypointsOnce();
             return;
         }
 
@@ -153,14 +145,6 @@ public final class NearbyMaterialScanner {
         if (joinGraceTicks > 0) {
             joinGraceTicks--;
             return;
-        }
-
-        // 【P2】维度切换：存旧维度、读新维度 section 数据，并把点重灌给 Xaero
-        String dimension = client.world.getRegistryKey().getValue().toString();
-        if (!dimension.equals(MaterialClusters.dimension())) {
-            MaterialClusters.switchDimension(dimension);
-            XaeroWaypointBridge.resetSession();
-            updateClusterWaypoints(client, true);
         }
 
         // 清单刷新
@@ -369,9 +353,6 @@ public final class NearbyMaterialScanner {
         int radius = Configs.MATERIAL_SCAN_RADIUS.getIntegerValue();
         long radiusSq = (long) radius * radius;
         BlockPos center = client.player.getBlockPos();
-        // 【P2】资源簇：本 section 内「原料 → 数量」与第一个命中位置
-        Map<Item, Integer> sectionCounts = new HashMap<>();
-        Map<Item, BlockPos> sectionSamples = new HashMap<>();
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
@@ -410,8 +391,6 @@ public final class NearbyMaterialScanner {
                     }
                     for (MaterialWatchlist.WatchItem target : targets) {
                         cycleBlockCounts.merge(target.item(), 1L, Long::sum);
-                        sectionCounts.merge(target.item(), 1, Integer::sum);
-                        sectionSamples.putIfAbsent(target.item(), new BlockPos(wx, wy, wz));
                         if (MaterialScanTargets.isLogItem(target.item())) {
                             List<BlockPos> samples = cycleLogPositions.computeIfAbsent(
                                     target.item(), k -> new ArrayList<>());
@@ -422,14 +401,6 @@ public final class NearbyMaterialScanner {
                     }
                     cycleBlockByBlock.merge(block, 1L, Long::sum);
                 }
-            }
-        }
-        // 【P2】把这个 section 的原料计数喂给资源簇数据层（同 section 重扫会覆盖，采空自然消失）
-        if (Configs.MATERIAL_SCAN_CLUSTERS_ENABLED.getBooleanValue() && !sectionCounts.isEmpty()) {
-            String dim = client.world.getRegistryKey().getValue().toString();
-            for (Map.Entry<Item, Integer> entry : sectionCounts.entrySet()) {
-                MaterialClusters.onSection(dim, entry.getKey(), ref.chunkX(), ref.sectionY(), ref.chunkZ(),
-                        entry.getValue(), sectionSamples.get(entry.getKey()));
             }
         }
     }
@@ -627,13 +598,6 @@ public final class NearbyMaterialScanner {
             }
         }
 
-        // 【P2】一轮扫完：重算资源簇并刷新 Xaero 点
-        if (Configs.MATERIAL_SCAN_CLUSTERS_ENABLED.getBooleanValue()) {
-            updateClusterWaypoints(client, false);
-        } else {
-            clearClusterWaypointsOnce();
-        }
-
         // 下一轮
         cycleBlockCounts.clear();
         cycleBlockByBlock.clear();
@@ -642,49 +606,6 @@ public final class NearbyMaterialScanner {
         cycleLogPositions.clear();
         sectionCursor = 0;
         // 下一轮会自动 rebuild（sections 不为空、判据不触发 ⇒ 保留列表），但玩家移动后 buildSections 会重建
-    }
-
-    // ---------------------------------------------------------------- 资源簇（P2）
-
-    /** 重算当前维度的资源簇并灌进 Xaero（关着就清一次；点没变就不重复灌）。 */
-    private static void updateClusterWaypoints(MinecraftClient client, boolean forceLog) {
-        try {
-            if (!Configs.MATERIAL_SCAN_CLUSTERS_ENABLED.getBooleanValue()) {
-                clearClusterWaypointsOnce();
-                return;
-            }
-            List<MaterialClusters.Cluster> all = MaterialClusters.recompute();
-            List<MaterialClusters.Cluster> shown = MaterialClusters.nearest(client, all);
-            StringBuilder signature = new StringBuilder();
-            for (MaterialClusters.Cluster cluster : shown) {
-                signature.append(cluster.item().hashCode()).append('@')
-                        .append(cluster.x()).append(',').append(cluster.y()).append(',')
-                        .append(cluster.z()).append('=').append(cluster.count()).append(';');
-            }
-            String sig = signature.toString();
-            if (!forceLog && sig.equals(lastClusterSignature) && !clusterWaypointsCleared) {
-                return;
-            }
-            lastClusterSignature = sig;
-            XaeroWaypointBridge.refresh(shown);
-            clusterWaypointsCleared = false;
-            if (forceLog || shown.size() != lastClusterCount) {
-                lastClusterCount = shown.size();
-                LOGGER.info("[material-scan] 资源簇：{} 个点（维度 {}，候选 {} 簇）",
-                        shown.size(), MaterialClusters.dimension(), all.size());
-            }
-        } catch (Throwable t) {
-            LOGGER.warn("[material-scan] 资源簇更新失败：{}", t.toString());
-        }
-    }
-
-    private static void clearClusterWaypointsOnce() {
-        if (clusterWaypointsCleared) {
-            return;
-        }
-        clusterWaypointsCleared = true;
-        lastClusterCount = 0;
-        XaeroWaypointBridge.clear();
     }
 
     private static boolean isResourceEntity(Entity entity) {
@@ -759,9 +680,6 @@ public final class NearbyMaterialScanner {
     }
 
     private static void resetAll() {
-        MaterialClusters.save();
-        XaeroWaypointBridge.resetSession();
-        clearClusterWaypointsOnce();
         resetCycle();
         MaterialChatNotifier.reset();
     }

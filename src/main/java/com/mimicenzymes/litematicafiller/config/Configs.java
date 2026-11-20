@@ -169,8 +169,6 @@ public class Configs implements IConfigHandler {
     public static final ConfigInteger MATERIAL_SCAN_CHEST_INTERVAL = new ConfigInteger("litematica_container_filler.config.name.materialScanChestInterval", 100, 40, 1200, "litematica_container_filler.config.comment.materialScanChestInterval");
     /** 手动黑名单（物品 ID；聊天 [拉黑] 也能加）。默认空。 */
     public static final ConfigStringList MATERIAL_SCAN_BLACKLIST = new ConfigStringList("litematica_container_filler.config.name.materialScanBlacklist", ImmutableList.of(), "litematica_container_filler.config.comment.materialScanBlacklist");
-    /** 【P2】资源簇地图点（Xaero 第三方 waypoint）；默认开，跟随野外材料感知总开关。 */
-    public static final ConfigBoolean MATERIAL_SCAN_CLUSTERS_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialScanClusters", true, "litematica_container_filler.config.comment.materialScanClusters");
 
     //高亮渲染基础设置
     public static final ConfigBooleanHotkeyed HIGHLIGHT_CONTAINERS  = new ConfigBooleanHotkeyed("litematica_container_filler.config.name.highlightContainers", true, "", "litematica_container_filler.config.comment.highlightContainers");
@@ -319,7 +317,6 @@ public class Configs implements IConfigHandler {
                 MATERIAL_SCAN_MIN_NEED,
                 MATERIAL_SCAN_CHEST_SEARCH,
                 MATERIAL_SCAN_CHEST_INTERVAL,
-                MATERIAL_SCAN_CLUSTERS_ENABLED,
                 MATERIAL_SCAN_BLACKLIST
         );
 

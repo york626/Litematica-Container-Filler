@@ -494,8 +494,6 @@
   "litematica_container_filler.config.comment.materialScanChestSearch": "套用 ChestTracker 点物品的行为：把缺料清单丢给内嵌 WhereIsIt 搜索，已开过的、含缺料的箱子会亮外框（穿墙，约 5 秒淡出）。只在没有界面时搜索（否则 WhereIsIt 会主动关界面）。需要装【箱子追踪】；没装只保留聊天提示。",
   "litematica_container_filler.config.name.materialScanChestInterval": "箱子外框搜索间隔（tick）",
   "litematica_container_filler.config.comment.materialScanChestInterval": "每 100 tick（5 秒）重触发一次，对齐 WhereIsIt 的 5 秒淡出（fadeout_time_ticks 默认 100）。",
-  "litematica_container_filler.config.name.materialScanClusters": "资源簇地图点（Xaero）",
-  "litematica_container_filler.config.comment.materialScanClusters": "把附近发现的资源簇标到 Xaero 世界地图/小地图：同一个 16³ 区块内同种缺料原料相邻合并、合计 ≥64 算一簇，显示成红点「原料×数量」。走过累积、重扫更新、采空删点；按维度保存（config/litematica_container_filler/material_clusters.json）。跟随「野外材料感知」总开关；没装 Xaero 时自动跳过。",
   "litematica_container_filler.config.name.materialScanBlacklist": "野外扫描黑名单",
   "litematica_container_filler.config.comment.materialScanBlacklist": "不参与附近提示/箱子搜索的物品 ID（如 minecraft:stone）。默认空；聊天里点 [拉黑] 会自动加进来，也可用 /lcf scan blacklist add|remove 管理。",
   "litematica_container_filler.hotkey.name.materialScanToggle": "野外材料感知开关",
