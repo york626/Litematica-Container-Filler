@@ -135,6 +135,8 @@ public class Configs implements IConfigHandler {
     public static final ConfigBoolean MATERIAL_LIST_HUD_TWEAK        = new ConfigBoolean("litematica_container_filler.config.name.materialListHudTweak", true, "litematica_container_filler.config.comment.materialListHudTweak");
     /** 材料列表忽略「放置启用」：放置关掉时照样统计材料（三层：取区块 + 从投影原始数据读 + 诊断日志）。 */
     public static final ConfigBoolean MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialListIgnorePlacementEnabled", true, "litematica_container_filler.config.comment.materialListIgnorePlacementEnabled");
+    /** 离线材料列表（Ray 2026-11-20）：远离投影/区块未加载时，打开材料列表不再等待加载区块——总数读投影文件，missing 用上次缓存。 */
+    public static final ConfigBoolean MATERIAL_LIST_OFFLINE_ENABLED = new ConfigBoolean("litematica_container_filler.config.name.materialListOfflineEnabled", true, "litematica_container_filler.config.comment.materialListOfflineEnabled");
     /** 高亮材料列表物品：打开容器时按**当前视图**的缺料高亮槽位（约 3 秒渐隐）。 */
     public static final ConfigBoolean MATERIAL_HIGHLIGHT                        = new ConfigBoolean("litematica_container_filler.config.name.materialHighlight", true, "litematica_container_filler.config.comment.materialHighlight");
     /** 二级材料显示：材料列表每行追加「←N 原料 / ≈N 可互换物」，备够变白、没备够变灰；数量列同款写法。 */
@@ -262,6 +264,7 @@ public class Configs implements IConfigHandler {
                 MATERIAL_LIST_GROUP_SORT,
                 MATERIAL_LIST_HUD_TWEAK,
                 MATERIAL_LIST_IGNORE_PLACEMENT_ENABLED,
+                MATERIAL_LIST_OFFLINE_ENABLED,
                 MATERIAL_HIGHLIGHT,
                 MATERIAL_BREAKDOWN,
                 MATERIAL_BREAKDOWN_SHOW_TOTAL,

@@ -469,6 +469,8 @@
 "litematica_container_filler.config.name.materialBreakdown": "二级材料显示（← 原料 / ≈ 可互换）",
   "litematica_container_filler.config.comment.materialBreakdown": "材料列表每行数量后面追加它的二级材料：能互转的用 ≈（红石粉 ⇄ 红石块），单向的用 ←（平滑石英台阶 ← 平滑石英块）。数量向上取整（宁可多备不会少备）；多原料配方和 tag 配方不显示。数量列保持「自身净缺口」不叠加二级需求（697 不变成 982）。二级原料「备够没备够」按该物品的总备货需求判定（自身需求 + 其他行的单向需求），够了变亮白、没备够显示浅灰。打开材料列表顶部的「HUD 信息显示」后才在 HUD 上可见。",  "litematica_container_filler.config.name.materialBreakdownShowTotal": "二级材料显示整单总需",
   "litematica_container_filler.config.comment.materialBreakdownShowTotal": "开：提示里显示「本行用量/整单需求」（如 ←2/34锁链）；关（默认）：只显示本行用量。颜色判定始终按整单总需，不受此开关影响。",
+  "litematica_container_filler.config.name.materialListOfflineEnabled": "离线材料列表（远离投影也能看）",
+  "litematica_container_filler.config.comment.materialListOfflineEnabled": "打开材料列表时如果投影所在区块没加载（人在远处），不再等待加载区块：总数直接读投影文件算，missing/mismatch 用最近一次在附近时的缓存（没缓存的行按总数显示）。缓存文件 config/litematica_container_filler/offline_material_cache.json。",
   "litematica_container_filler.config.name.materialHighlight": "高亮材料列表物品",
   "litematica_container_filler.config.comment.materialHighlight": "打开箱子/桶/潜影盒等容器时，把材料列表里**还缺的**材料对应槽位闪绿色边框 + 淡绿底（约 3 秒渐隐），只闪「够这次用」的数量（盒装按内容算，一盒够就只闪一盒）。**跟随材料列表当前视图**：容器视图只认容器材料、全部视图认合并结果、方块视图只认原生建筑方块——三视图不串。玩家自己背包不高亮，精妙背包自己的界面不闪。",
   "litematica_container_filler.gui.button.scan": "材料感知",

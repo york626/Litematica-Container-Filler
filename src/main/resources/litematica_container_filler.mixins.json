@@ -35,6 +35,7 @@
     "MixinTaskCountBlocksPlacementIgnoreEnabled",
     "MixinTaskCountBlocksPlacementOfflineSampler",
     "MixinTaskCountBlocksBaseStopLog",
+    "MixinMaterialListPlacementOffline",
     "MixinHandledScreenMaterialHighlight",
     "MixinMaterialListHudRenderer",
     "MixinMaterialListBaseSynthesisFilter",

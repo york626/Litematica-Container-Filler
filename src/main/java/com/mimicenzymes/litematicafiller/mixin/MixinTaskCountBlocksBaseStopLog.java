@@ -35,6 +35,14 @@ public abstract class MixinTaskCountBlocksBaseStopLog {
 
     @Inject(method = "onStop", at = @At("RETURN"), remap = false, require = 0)
     private void lcf$logStopAndRepair(CallbackInfo ci) {
+        // 【离线材料列表】正常（区块已加载）统计完成时，把 missing/mismatch 缓存下来
+        try {
+            if (this.materialList instanceof fi.dy.masa.litematica.materials.MaterialListPlacement placementList) {
+                com.mimicenzymes.litematicafiller.materials.OfflineMaterialList.capture(
+                        ((MaterialListPlacementAccessor) placementList).getPlacement(), placementList);
+            }
+        } catch (Throwable ignored) {
+        }
         try {
             int size = -1;
             if (this.materialList instanceof fi.dy.masa.litematica.materials.MaterialListBase base) {
