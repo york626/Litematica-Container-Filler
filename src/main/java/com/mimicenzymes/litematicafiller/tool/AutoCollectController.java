@@ -2,6 +2,7 @@ package com.mimicenzymes.litematicafiller.tool;
 
 import com.mimicenzymes.litematicafiller.config.Configs;
 import com.mimicenzymes.litematicafiller.config.Hotkeys;
+import com.mimicenzymes.litematicafiller.filter.ContainerBlockFilter;
 import com.mimicenzymes.litematicafiller.materials.FillMaterialCalculator;
 import com.mimicenzymes.litematicafiller.network.BatchServerLink;
 import net.minecraft.client.MinecraftClient;
@@ -78,6 +79,13 @@ public final class AutoCollectController {
             fired = false;
             return;
         }
+        // ★ 1.22.13：准星必须已经对着容器才进入长按计时，否则静默不动作。
+        //   长按右键吃东西/放置时（热键绑右键）不再弹「请把准星对准目标容器再按住」、不再计时（Ray 2026-11-22）。
+        if (!isLookingAtContainer(client)) {
+            holdTicks = 0;
+            fired = false;
+            return;
+        }
         if (fired || cooldownTicks > 0) {
             return;
         }
@@ -88,6 +96,17 @@ public final class AutoCollectController {
         fired = true;
         cooldownTicks = COOLDOWN_TICKS;
         trigger(client);
+    }
+
+    /** 准星当前是否指着容器类方块（ chest/木桶/潜影盒/漏斗/熔炉/合成器…，用 CF 自己的判据）。 */
+    private static boolean isLookingAtContainer(MinecraftClient client) {
+        if (!(client.crosshairTarget instanceof BlockHitResult hit)
+                || hit.getType() != HitResult.Type.BLOCK
+                || client.world == null) {
+            return false;
+        }
+        return ContainerBlockFilter.isContainerLike(
+                client.world.getBlockState(hit.getBlockPos()), client.world, hit.getBlockPos());
     }
 
     private void trigger(MinecraftClient client) {
