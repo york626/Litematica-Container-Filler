@@ -64,9 +64,6 @@ public final class BatchServerLink {
     public static final int ACTION_FILL_FULL = 1;
     public static final int ACTION_SCHEMATIC_FILL = 2;
     public static final int ACTION_COLLECT_MISSING = 3;
-    /** 【设置箱子追踪库存】只读：把容器内容发回客户端（2026-11-19）。 */
-    public static final int ACTION_READ_CONTENTS = 4;
-
     public static final int RESULT_DONE = 1;
     public static final int RESULT_NO_CONTAINER = 2;
     public static final int RESULT_MISSING = 3;
@@ -180,42 +177,6 @@ public final class BatchServerLink {
         }
     }
 
-    /**
-     * S2C：容器内容（{@link #ACTION_READ_CONTENTS} 的回复，2026-11-19）。
-     * 用途：客户端把内容写进箱子追踪记忆库（设置箱子追踪库存）。
-     */
-    public record Contents(long pos, Identifier blockId, List<ItemStack> items) implements CustomPayload {
-        public static final Id<Contents> ID = new Id<>(Identifier.of("litematica_container_filler", "batch_contents"));
-
-        public static final PacketCodec<RegistryByteBuf, Contents> CODEC =
-                PacketCodec.ofStatic(Contents::write, Contents::read);
-
-        private static void write(RegistryByteBuf buf, Contents value) {
-            buf.writeLong(value.pos());
-            buf.writeIdentifier(value.blockId());
-            buf.writeVarInt(value.items().size());
-            for (ItemStack stack : value.items()) {
-                ItemStack.OPTIONAL_PACKET_CODEC.encode(buf, stack);
-            }
-        }
-
-        private static Contents read(RegistryByteBuf buf) {
-            long pos = buf.readLong();
-            Identifier blockId = buf.readIdentifier();
-            int count = buf.readVarInt();
-            List<ItemStack> items = new ArrayList<>(Math.min(count, 256));
-            for (int i = 0; i < count; i++) {
-                items.add(ItemStack.OPTIONAL_PACKET_CODEC.decode(buf));
-            }
-            return new Contents(pos, blockId, items);
-        }
-
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
-        }
-    }
-
     /** 注册（幂等）。 */
     public static void register() {
         if (registered) {
@@ -224,7 +185,6 @@ public final class BatchServerLink {
         registered = true;
         PayloadTypeRegistry.playC2S().register(Action.ID, Action.CODEC);
         PayloadTypeRegistry.playS2C().register(Result.ID, Result.CODEC);
-        PayloadTypeRegistry.playS2C().register(Contents.ID, Contents.CODEC);
         ServerPlayNetworking.registerGlobalReceiver(Action.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             if (player == null || player.getServer() == null) {
@@ -240,9 +200,6 @@ public final class BatchServerLink {
                     com.mimicenzymes.litematicafiller.tool.BatchToolController.getInstance()
                             .onServerResult(payload.pos(), payload.status(), payload.missing());
                 }));
-        ClientPlayNetworking.registerGlobalReceiver(Contents.ID, (payload, context) ->
-                context.client().execute(() ->
-                        com.mimicenzymes.litematicafiller.scan.ChestTrackerInventoryScanner.onContents(payload)));
     }
 
     /** 服务端有没有这条通道（单人 / 装了本模组的服务器 ⇒ true）。 */
@@ -297,8 +254,6 @@ public final class BatchServerLink {
                 if (!Configs.AUTO_COLLECT_ENABLED.getBooleanValue()) {
                     return;
                 }
-            } else if (payload.action() == ACTION_READ_CONTENTS) {
-                // 【设置箱子追踪库存】只读：不需要批量激活、不检查距离（服务端读 Inventory 无副作用）
             } else if (!BatchToolState.isActive()
                     || !Configs.BATCH_TOOL_ENABLED.getBooleanValue()) {
                 return; // 批量已经结束/被取消：丢弃迟到请求
@@ -324,10 +279,8 @@ public final class BatchServerLink {
                     inv = merged;
                 }
             }
-            if (payload.action() != ACTION_READ_CONTENTS
-                    && !Configs.BATCH_TOOL_FAR_REACH.getBooleanValue()
+            if (!Configs.BATCH_TOOL_FAR_REACH.getBooleanValue()
                     && !player.canInteractWithBlockAt(pos, 1.0)) {
-                // 远距离放行没开时，仍然按原版距离规则来（只读的库存扫描不受这条限制）
                 sendResult(player, posLong, RESULT_FAILED, 0);
                 return;
             }
@@ -337,41 +290,11 @@ public final class BatchServerLink {
                 case ACTION_FILL_FULL -> handleFillFull(posLong, player, inv, payload.items());
                 case ACTION_SCHEMATIC_FILL -> handleSchematicFill(posLong, player, inv, payload.targets());
                 case ACTION_COLLECT_MISSING -> handleCollectToPlayer(posLong, player, inv, payload.items(), payload.plan());
-                case ACTION_READ_CONTENTS -> handleReadContents(posLong, player, inv);
                 default -> sendResult(player, posLong, RESULT_FAILED, 0);
             }
         } catch (Throwable t) {
             LOGGER.warn("[batch] 直连执行失败 pos={}", BlockPos.fromLong(posLong), t);
             sendResult(player, posLong, RESULT_FAILED, 0);
-        }
-    }
-
-    /** 【设置箱子追踪库存】客户端：请求一个容器的内容（只读）。 */
-    public static void sendReadContents(BlockPos pos) {
-        try {
-            ClientPlayNetworking.send(new Action(pos.asLong(), ACTION_READ_CONTENTS,
-                    List.of(), List.of(), List.of()));
-        } catch (Throwable t) {
-            LOGGER.warn("[chest-inventory] 读取请求发送失败 pos={}", pos, t);
-        }
-    }
-
-    /** 【设置箱子追踪库存】服务端：把容器内容原样回给客户端（不修改任何东西；双箱用合并后的 inv）。 */
-    private static void handleReadContents(long posLong, ServerPlayerEntity player, Inventory inv) {
-        BlockPos pos = BlockPos.fromLong(posLong);
-        List<ItemStack> items = new ArrayList<>();
-        try {
-            for (int i = 0; i < inv.size(); i++) {
-                ItemStack stack = inv.getStack(i);
-                if (stack != null && !stack.isEmpty()) {
-                    items.add(stack.copy());
-                }
-            }
-            Identifier blockId = Registries.BLOCK.getId(
-                    player.getServerWorld().getBlockState(pos).getBlock());
-            ServerPlayNetworking.send(player, new Contents(posLong, blockId, items));
-        } catch (Throwable t) {
-            LOGGER.warn("[chest-inventory] 读取容器内容失败 pos={}", pos, t);
         }
     }
 

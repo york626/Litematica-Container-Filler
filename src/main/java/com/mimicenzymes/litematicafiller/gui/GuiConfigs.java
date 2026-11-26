@@ -112,8 +112,6 @@ public class GuiConfigs extends GuiConfigsBase {
             case RENDER -> Configs.RENDER_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
             case SCAN -> {
                 Configs.SCAN_OPTIONS.forEach(c -> list.add(new ConfigOptionWrapper(c)));
-                // 【设置箱子追踪库存】紧挨箱子外框那组（Ray 2026-11-19；默认未绑定，别占二改的 ALT+E）
-                list.add(new ConfigOptionWrapper(Hotkeys.CHEST_TRACKER_INVENTORY_SET));
                 list.add(new ConfigOptionWrapper(Hotkeys.MATERIAL_SCAN_TOGGLE));
             }
             case HOTKEYS -> Hotkeys.HOTKEY_LIST.forEach(h -> list.add(new ConfigOptionWrapper(h)));

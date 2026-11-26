@@ -497,7 +497,5 @@
   "litematica_container_filler.config.name.materialScanBlacklist": "Wild Scan Blacklist",
   "litematica_container_filler.config.comment.materialScanBlacklist": "Item IDs excluded from nearby hints / chest search (e.g. minecraft:stone). Empty by default; the chat's [Blacklist] button adds them, and /lcf scan blacklist add|remove manages the list.",
   "litematica_container_filler.hotkey.name.materialScanToggle": "Toggle Wild Material Scan",
-  "litematica_container_filler.hotkey.comment.materialScanToggle": "Press to toggle the wild material scan (unbound by default). On: scan nearby missing materials and hint in chat; Off: stop hints and chest search.",
-  "litematica_container_filler.hotkey.name.chestTrackerInventorySet": "Set Chest Tracker Inventory",
-  "litematica_container_filler.hotkey.comment.chestTrackerInventorySet": "Writes the contents of containers inside the current Litematica selection into Chest Tracker's memory (no manual opening needed), so chest outlines can find them. Unbound by default; works in singleplayer / integrated server (no GUI, no flicker)."
+  "litematica_container_filler.hotkey.comment.materialScanToggle": "Press to toggle the wild material scan (unbound by default). On: scan nearby missing materials and hint in chat; Off: stop hints and chest search."
 }

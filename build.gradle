@@ -37,7 +37,7 @@ dependencies {
     // 【野外材料感知】箱子外框：复用 ChestTracker 内嵌的 WhereIsIt 搜索 API（运行期由箱子追踪提供）
     modCompileOnly name: 'whereisit-2.6.3+1.21.1'
 
-    // 【设置箱子追踪库存】直接往 ChestTracker 记忆库写记录（运行期由箱子追踪提供，软依赖）
+    // 【野外材料感知】箱子外框读取 ChestTracker 记忆库（运行期由箱子追踪提供，软依赖）
     modCompileOnly name: 'chesttracker-2.6.7+1.21.1'
 
     // 【快捷精妙背包提取】精妙背包 / 精妙核心（编译期；运行期由 mods 目录提供）
